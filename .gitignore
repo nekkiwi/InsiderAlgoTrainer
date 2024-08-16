@@ -1,22 +1,23 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
-.venv
-ENV/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
 env/
 venv/
-.DS_Store
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Data science
+*.ipynb_checkpoints
 
 # VS Code
 .vscode/
-*.code-workspace
-
-# Byte-compiled / optimized / DLL files
-*.py[cod]
-*$py.class
