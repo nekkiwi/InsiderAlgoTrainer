@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+ENV/
+env/
+venv/
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+*$py.class
