@@ -12,7 +12,9 @@ from multiprocessing import Pool, cpu_count
 # Add the 'src' directory to the system path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from utils.scraper_helpers import parse_titles, clean_numeric_columns, calculate_technical_indicators, process_dates, aggregate_group, process_ticker_technical_indicators
+from utils.feature_scraper_helpers import parse_titles, clean_numeric_columns, process_dates, aggregate_group
+from utils.technical_indicators_helpers import process_ticker_technical_indicators
+from utils.financial_ratios_helpers import process_ticker_financial_ratios
 
 class FeatureScraper:
     def __init__(self):
@@ -59,7 +61,22 @@ class FeatureScraper:
         # Filter out None values (rows where stock data was not found)
         self.data = pd.DataFrame(filter(None, processed_rows))
         self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after reading stock data!")
+        print(f"{len(self.data)} entries remained after adding technical indicators!")
+        
+    def add_financial_ratios(self):
+        """Add technical indicators to the DataFrame with parallel processing and a progress bar."""
+        # Convert DataFrame to a list of dictionaries for easier processing with multiprocessing
+        rows = self.data.to_dict('records')
+        
+        # Initialize a pool with a number of processes equal to the CPU count
+        with Pool(cpu_count()) as pool:
+            # Use tqdm to show a progress bar while processing
+            processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows)))
+        
+        # Filter out None values (rows where stock data was not found)
+        self.data = pd.DataFrame(filter(None, processed_rows))
+        self.data.dropna(inplace=True)
+        print(f"{len(self.data)} entries remained after adding financial ratios!")
     
     def save_to_excel(self, file_path='output.xlsx'):
         """Save the self.data DataFrame to an Excel file."""
@@ -76,21 +93,23 @@ class FeatureScraper:
         else:
             print("No data to save.")
         
-    def extract_features(self):
-        html = self.get_html(scraper.base_url)
+    def run(self):
+        html = self.get_html(self.base_url)
         self.parse_table(html)
+        # self.save_to_excel('raw/features.xlsx')
         
-    def process_features(self):
         self.clean_table()
         self.add_technical_indicators()
-        # add financial ratios
-        # add company purchases/sales
+        self.add_financial_ratios()
+    
+        # TODO add company purchases/sales
+        # TODO add days since IPO
+        # TODO dont save features if filing date < 30 BDays in the past
+        # TODO give all files to chatGPT and tell it to make it production ready
+        
+        self.save_to_excel('interim/features.xlsx')
         
 if __name__ == "__main__":
-    scraper = FeatureScraper()
+    feature_scraper = FeatureScraper()
+    feature_scraper.run()
     
-    scraper.extract_features()
-    scraper.save_to_excel('raw/features.xlsx')
-    
-    scraper.process_features()
-    scraper.save_to_excel('interim/features.xlsx')

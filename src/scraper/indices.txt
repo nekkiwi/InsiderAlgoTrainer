@@ -1,0 +1,180 @@
+Balance Sheet Keys:
+Ordinary Shares Number
+Share Issued
+Net Debt
+Total Debt
+Tangible Book Value
+Invested Capital
+Working Capital
+Net Tangible Assets
+Capital Lease Obligations
+Common Stock Equity
+Preferred Stock Equity
+Total Capitalization
+Total Equity Gross Minority Interest
+Stockholders Equity
+Retained Earnings
+Additional Paid In Capital
+Capital Stock
+Common Stock
+Preferred Stock
+Total Liabilities Net Minority Interest
+Total Non Current Liabilities Net Minority Interest
+Other Non Current Liabilities
+Derivative Product Liabilities
+Long Term Debt And Capital Lease Obligation
+Long Term Capital Lease Obligation
+Long Term Debt
+Long Term Provisions
+Current Liabilities
+Other Current Liabilities
+Current Deferred Liabilities
+Current Deferred Revenue
+Current Debt And Capital Lease Obligation
+Current Capital Lease Obligation
+Pensionand Other Post Retirement Benefit Plans Current
+Payables And Accrued Expenses
+Current Accrued Expenses
+Interest Payable
+Payables
+Accounts Payable
+Total Assets
+Total Non Current Assets
+Other Non Current Assets
+Non Current Deferred Assets
+Non Current Deferred Taxes Assets
+Financial Assets
+Net PPE
+Accumulated Depreciation
+Gross PPE
+Leases
+Other Properties
+Machinery Furniture Equipment
+Buildings And Improvements
+Land And Improvements
+Current Assets
+Other Current Assets
+Hedging Assets Current
+Prepaid Assets
+Inventory
+Receivables
+Other Receivables
+Duefrom Related Parties Current
+Accounts Receivable
+Cash Cash Equivalents And Short Term Investments
+Cash And Cash Equivalents
+
+Cash Flow Statement Keys:
+Free Cash Flow
+Repurchase Of Capital Stock
+Repayment Of Debt
+Issuance Of Debt
+Issuance Of Capital Stock
+Capital Expenditure
+Interest Paid Supplemental Data
+End Cash Position
+Beginning Cash Position
+Changes In Cash
+Financing Cash Flow
+Cash Flow From Continuing Financing Activities
+Net Other Financing Charges
+Proceeds From Stock Option Exercised
+Net Common Stock Issuance
+Common Stock Payments
+Common Stock Issuance
+Net Issuance Payments Of Debt
+Net Short Term Debt Issuance
+Short Term Debt Payments
+Short Term Debt Issuance
+Net Long Term Debt Issuance
+Long Term Debt Payments
+Long Term Debt Issuance
+Investing Cash Flow
+Cash Flow From Continuing Investing Activities
+Net Other Investing Changes
+Net Business Purchase And Sale
+Sale Of Business
+Purchase Of Business
+Net PPE Purchase And Sale
+Sale Of PPE
+Purchase Of PPE
+Capital Expenditure Reported
+Operating Cash Flow
+Cash Flow From Continuing Operating Activities
+Change In Working Capital
+Change In Other Working Capital
+Change In Other Current Liabilities
+Change In Other Current Assets
+Change In Payables And Accrued Expense
+Change In Payable
+Change In Account Payable
+Change In Receivables
+Changes In Account Receivables
+Other Non Cash Items
+Stock Based Compensation
+Asset Impairment Charge
+Deferred Tax
+Deferred Income Tax
+Depreciation Amortization Depletion
+Depletion
+Depreciation And Amortization
+Depreciation
+Operating Gains Losses
+Gain Loss On Investment Securities
+Gain Loss On Sale Of PPE
+Net Income From Continuing Operations
+
+Income Statement Keys:
+Tax Effect Of Unusual Items
+Tax Rate For Calcs
+Normalized EBITDA
+Total Unusual Items
+Total Unusual Items Excluding Goodwill
+Net Income From Continuing Operation Net Minority Interest
+Reconciled Depreciation
+Reconciled Cost Of Revenue
+EBITDA
+EBIT
+Net Interest Income
+Interest Expense
+Normalized Income
+Net Income From Continuing And Discontinued Operation
+Total Expenses
+Total Operating Income As Reported
+Diluted Average Shares
+Basic Average Shares
+Diluted EPS
+Basic EPS
+Diluted NI Availto Com Stockholders
+Net Income Common Stockholders
+Preferred Stock Dividends
+Net Income
+Net Income Including Noncontrolling Interests
+Net Income Continuous Operations
+Tax Provision
+Pretax Income
+Other Income Expense
+Other Non Operating Income Expenses
+Special Income Charges
+Gain On Sale Of Ppe
+Other Special Charges
+Write Off
+Impairment Of Capital Assets
+Restructuring And Mergern Acquisition
+Earnings From Equity Interest
+Gain On Sale Of Security
+Net Non Operating Interest Income Expense
+Total Other Finance Cost
+Interest Expense Non Operating
+Operating Income
+Operating Expense
+Other Operating Expenses
+Other Taxes
+Selling General And Administration
+Selling And Marketing Expense
+General And Administrative Expense
+Other Gand A
+Gross Profit
+Cost Of Revenue
+Total Revenue
+Operating Revenue
