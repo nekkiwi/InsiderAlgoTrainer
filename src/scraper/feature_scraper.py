@@ -53,6 +53,7 @@ class FeatureScraper:
         # Filter out entries where Filing Date is less than 30 business days in the past
         cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(20)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
+        print(f"{len(self.data)} entries remained after filtering for cutoff date > 20 business days!")
         self.data = clean_numeric_columns(self.data)
         self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)

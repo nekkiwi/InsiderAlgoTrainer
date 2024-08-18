@@ -3,6 +3,7 @@ import contextlib
 import os
 from datetime import timedelta
 import pandas as pd
+import json
 
 def fetch_financial_data(ticker, filing_date):
     """Fetch historical financial data and metadata using yfinance."""
@@ -13,36 +14,60 @@ def fetch_financial_data(ticker, filing_date):
             # Ensure filing_date is a string in the format 'YYYY-MM-DD'
             filing_date_str = filing_date.strftime('%Y-%m-%d')
             
+            stock.balance_sheet.columns = pd.to_datetime(stock.balance_sheet.columns)
+            stock.cashflow.columns = pd.to_datetime(stock.cashflow.columns)
+            stock.financials.columns = pd.to_datetime(stock.financials.columns)
+            
             # Fetch historical balance sheet, cash flow, income statement
             try:
                 balance_sheet = stock.balance_sheet.loc[:, stock.balance_sheet.columns[stock.balance_sheet.columns <= filing_date_str]].iloc[:, 0]
-                cash_flow = stock.cashflow.loc[:, stock.cashflow.columns[stock.cash_flow.columns <= filing_date_str]].iloc[:, 0]
+                cash_flow = stock.cashflow.loc[:, stock.cashflow.columns[stock.cashflow.columns <= filing_date_str]].iloc[:, 0]
                 income_statement = stock.financials.loc[:, stock.financials.columns[stock.financials.columns <= filing_date_str]].iloc[:, 0]
             except IndexError:
                 # If there is no data before the filing date, return None
                 balance_sheet, cash_flow, income_statement = None, None, None
+            except Exception as e:
+                print(f"Failed to fetch financial data for {ticker}: {e}")
+                return None
 
             # Fetch historical market data (stock price and others)
-            historical_data = stock.history(start=filing_date - pd.tseries.offsets.BDay(3), end=filing_date)
+            try:
+                historical_data = stock.history(start=filing_date - pd.tseries.offsets.BDay(3), end=filing_date)
+            except Exception as e:
+                print(f"Failed to fetch historical data for {ticker}: {e}")
+                historical_data = pd.DataFrame()
 
             if not historical_data.empty:
                 latest_market_data = historical_data.iloc[-1]
+                try:
+                    market_cap = stock.info.get('marketCap', None)
+                    sector = stock.info.get('sector', None)
+                    industry = stock.info.get('industry', None)
+                    eps = stock.info.get('trailingEps', None)
+                    beta = stock.info.get('beta', None)
+                    high_52_week = stock.info.get('fiftyTwoWeekHigh', None)
+                    low_52_week = stock.info.get('fiftyTwoWeekLow', None)
+                    average_volume = stock.info.get('averageVolume', None)
+                except (json.decoder.JSONDecodeError, KeyError) as e:
+                    print(f"Failed to fetch metadata for {ticker}: {e}")
+                    return None
+
                 data = {
                     'balance_sheet': balance_sheet,
                     'cash_flow': cash_flow,
                     'income_statement': income_statement,
-                    'market_cap': stock.info.get('marketCap', None),
-                    'sector': stock.info.get('sector', None),
-                    'industry': stock.info.get('industry', None),
-                    'eps': stock.info.get('trailingEps', None),
-                    'beta': stock.info.get('beta', None),
-                    'high_52_week': stock.info.get('fiftyTwoWeekHigh', None),
-                    'low_52_week': stock.info.get('fiftyTwoWeekLow', None),
-                    'average_volume': stock.info.get('averageVolume', None),
+                    'market_cap': market_cap,
+                    'sector': sector,
+                    'industry': industry,
+                    'eps': eps,
+                    'beta': beta,
+                    'high_52_week': high_52_week,
+                    'low_52_week': low_52_week,
+                    'average_volume': average_volume,
                     'current_price': latest_market_data.get('Close', None)
                 }
             else:
-                data = None
+                return None
 
     return data
 
