@@ -6,12 +6,13 @@ import os
 from io import StringIO
 import openpyxl
 import yfinance as yf
+from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
 
 # Add the 'src' directory to the system path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from utils.scraper_helpers import parse_titles, clean_numeric_columns, calculate_technical_indicators, process_dates, aggregate_group
-from utils.stock_helpers import download_stock_data
+from utils.scraper_helpers import parse_titles, clean_numeric_columns, calculate_technical_indicators, process_dates, aggregate_group, process_ticker_technical_indicators
 
 class FeatureScraper:
     def __init__(self):
@@ -29,30 +30,36 @@ class FeatureScraper:
         self.data = pd.read_html(StringIO(str(table)))[0]
         # Clean up column names by replacing \xa0 with a regular space
         self.data.columns = self.data.columns.str.replace('\xa0', ' ', regex=False)
+        print(f"{len(self.data)} entries extracted!")
     
     def clean_table(self):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
-        process_dates(self)
-        clean_numeric_columns(self)
-        parse_titles(self)
+        self.data = process_dates(self.data)
+        self.data = clean_numeric_columns(self.data)
+        self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)
         # Group by Ticker and Filing Date, then aggregate
-        aggregate_group(self)
+        self.data = aggregate_group(self.data)
         self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
         # Drop rows with any NaN in the specified columns
         self.data.dropna(inplace=True)
-        
+        print(f"{len(self.data)} entries remained after cleaning!")
+    
     def add_technical_indicators(self):
-        """Add technical indicators to the DataFrame."""
-        def process_ticker(row):
-            ticker = row['Ticker']
-            stock_data = download_stock_data(ticker)
-            row = calculate_technical_indicators(row, stock_data)
-            return row
-
-        # Apply the processing function to each row in the DataFrame
-        self.data = self.data.apply(process_ticker, axis=1, inplace=True)
+        """Add technical indicators to the DataFrame with parallel processing and a progress bar."""
+        # Convert DataFrame to a list of dictionaries for easier processing with multiprocessing
+        rows = self.data.to_dict('records')
+        
+        # Initialize a pool with a number of processes equal to the CPU count
+        with Pool(cpu_count()) as pool:
+            # Use tqdm to show a progress bar while processing
+            processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows)))
+        
+        # Filter out None values (rows where stock data was not found)
+        self.data = pd.DataFrame(filter(None, processed_rows))
+        self.data.dropna(inplace=True)
+        print(f"{len(self.data)} entries remained after reading stock data!")
     
     def save_to_excel(self, file_path='output.xlsx'):
         """Save the self.data DataFrame to an Excel file."""
@@ -75,8 +82,7 @@ class FeatureScraper:
         
     def process_features(self):
         self.clean_table()
-        # add technical indicators
-        # self.add_technical_indicators()
+        self.add_technical_indicators()
         # add financial ratios
         # add company purchases/sales
         
