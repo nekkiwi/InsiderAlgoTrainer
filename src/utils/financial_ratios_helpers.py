@@ -10,6 +10,8 @@ def fetch_financial_data(ticker, filing_date):
     with open(os.devnull, 'w') as fnull:
         with contextlib.redirect_stdout(fnull), contextlib.redirect_stderr(fnull):
             stock = yf.Ticker(ticker)
+            
+            info = stock.info
 
             # Ensure filing_date is a string in the format 'YYYY-MM-DD'
             filing_date_str = filing_date.strftime('%Y-%m-%d')
@@ -40,14 +42,14 @@ def fetch_financial_data(ticker, filing_date):
             if not historical_data.empty:
                 latest_market_data = historical_data.iloc[-1]
                 try:
-                    market_cap = stock.info.get('marketCap', None)
-                    sector = stock.info.get('sector', None)
-                    industry = stock.info.get('industry', None)
-                    eps = stock.info.get('trailingEps', None)
-                    beta = stock.info.get('beta', None)
-                    high_52_week = stock.info.get('fiftyTwoWeekHigh', None)
-                    low_52_week = stock.info.get('fiftyTwoWeekLow', None)
-                    average_volume = stock.info.get('averageVolume', None)
+                    market_cap = info.get('marketCap', None)
+                    sector = info.get('sector', None)
+                    industry = info.get('industry', None)
+                    eps = info.get('trailingEps', None)
+                    beta = info.get('beta', None)
+                    high_52_week = info.get('fiftyTwoWeekHigh', None)
+                    low_52_week = info.get('fiftyTwoWeekLow', None)
+                    average_volume = info.get('averageVolume', None)
                 except (json.decoder.JSONDecodeError, KeyError) as e:
                     print(f"Failed to fetch metadata for {ticker}: {e}")
                     return None
@@ -143,11 +145,48 @@ def calculate_financial_ratios(data):
 
     return ratios
 
+def get_days_since_ipo(ticker, filing_date):
+    """
+    Calculate the number of days since IPO based on historical stock data.
+
+    Args:
+    - ticker (str): The stock ticker symbol.
+    - filing_date (datetime): The filing date.
+
+    Returns:
+    - int: Number of days since IPO as of the filing date.
+    """
+    # Fetch the historical data for the ticker with the maximum available period
+    with open(os.devnull, 'w') as fnull:
+        with contextlib.redirect_stdout(fnull), contextlib.redirect_stderr(fnull):
+            stock = yf.Ticker(ticker)
+            historical_data = stock.history(period='max')
+    
+            if historical_data.empty:
+                print(f"No historical data available for ticker {ticker}.")
+                return None
+            
+            # The IPO date is the first date in the historical data
+            ipo_date = historical_data.index.min()
+
+            # Convert both filing_date and ipo_date to be timezone-naive
+            ipo_date = ipo_date.tz_localize(None)
+            filing_date = filing_date.tz_localize(None)
+
+            # Calculate the difference between the filing date and the IPO date
+            days_since_ipo = (filing_date - ipo_date).days
+            
+            return days_since_ipo
+
 
 def process_ticker_financial_ratios(row):
     """Process each ticker by downloading the stock data, benchmark data, and calculating indicators."""
     ticker = row['Ticker']
     filing_date = pd.to_datetime(row['Filing Date'], dayfirst=True)
+
+    # Calculate days since IPO
+    days_since_ipo = get_days_since_ipo(ticker, filing_date)
+    row['Days_Since_IPO'] = days_since_ipo
 
     # Fetch financial data up to the filing date
     data = fetch_financial_data(ticker, filing_date)

@@ -10,7 +10,7 @@ def normalize_indicators(indicators, stock_data):
 
     for key, value in indicators.items():
         if isinstance(value, pd.Series):
-            if key in ['SMA_10', 'SMA_50', 'EMA_10', 'EMA_50', 'Bollinger_Upper', 'Bollinger Middle', 'Bollinger_Lower', 'ATR_14', 'SAR']:
+            if key in ['SMA_10', 'SMA_50', 'EMA_10', 'EMA_50', 'Bollinger_Upper', 'Bollinger_Lower', 'ATR_14', 'SAR']:
                 # Normalize by the closing price
                 normalized_indicators[key] = value / closing_price if not value.empty else None
             
@@ -53,18 +53,19 @@ def calculate_technical_indicators(row, stock_data):
 
     # Volatility Indicators
     indicators['ATR_14'] = talib.ATR(stock_data['High'], stock_data['Low'], stock_data['Close'], timeperiod=14)
-    indicators['Bollinger_Upper'], indicators['Bollinger_Middle'], indicators['Bollinger_Lower'] = talib.BBANDS(stock_data['Close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+    indicators['Bollinger_Upper'], _, indicators['Bollinger_Lower'] = talib.BBANDS(stock_data['Close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
 
     # Volume Indicators
     indicators['OBV'] = talib.OBV(stock_data['Close'], stock_data['Volume'])
-
-    # Cycle Indicators
-    indicators['HT_TRENDMODE'] = talib.HT_TRENDMODE(stock_data['Close'])
     
     # Pattern Recognition
     indicators['CDL_DOJI'] = talib.CDLDOJI(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
     indicators['CDL_HAMMER'] = talib.CDLHAMMER(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
     indicators['CDL_ENGULFING'] = talib.CDLENGULFING(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
+    
+    indicators['CDL_DOJI'] = indicators['CDL_DOJI'].apply(lambda x: int(x / 100))
+    indicators['CDL_HAMMER'] = indicators['CDL_HAMMER'].apply(lambda x: int(x / 100))
+    indicators['CDL_ENGULFING'] = indicators['CDL_ENGULFING'].apply(lambda x: int(x / 100))
 
     # Other Indicators (A selection of additional useful indicators)
     indicators['AROON_Up'], indicators['AROON_Down'] = talib.AROON(stock_data['High'], stock_data['Low'], timeperiod=14)
