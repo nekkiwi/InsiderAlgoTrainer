@@ -44,7 +44,6 @@ def fetch_financial_data(ticker, filing_date):
                 try:
                     market_cap = info.get('marketCap', None)
                     sector = info.get('sector', None)
-                    industry = info.get('industry', None)
                     eps = info.get('trailingEps', None)
                     beta = info.get('beta', None)
                     high_52_week = info.get('fiftyTwoWeekHigh', None)
@@ -60,7 +59,6 @@ def fetch_financial_data(ticker, filing_date):
                     'income_statement': income_statement,
                     'market_cap': market_cap,
                     'sector': sector,
-                    'industry': industry,
                     'eps': eps,
                     'beta': beta,
                     'high_52_week': high_52_week,
@@ -132,7 +130,6 @@ def calculate_financial_ratios(data):
 
     # Additional Information
     ratios['Sector'] = data.get('sector')
-    ratios['Industry'] = data.get('industry')
     ratios['EPS'] = data.get('eps')
     ratios['Beta'] = data.get('beta')
 
@@ -181,22 +178,25 @@ def get_days_since_ipo(ticker, filing_date):
 
 def process_ticker_financial_ratios(row):
     """Process each ticker by downloading the stock data, benchmark data, and calculating indicators."""
-    ticker = row['Ticker']
-    filing_date = pd.to_datetime(row['Filing Date'], dayfirst=True)
+    try:
+        ticker = row['Ticker']
+        filing_date = pd.to_datetime(row['Filing Date'], dayfirst=True)
 
-    # Calculate days since IPO
-    days_since_ipo = get_days_since_ipo(ticker, filing_date)
-    row['Days_Since_IPO'] = days_since_ipo
+        # Calculate days since IPO
+        days_since_ipo = get_days_since_ipo(ticker, filing_date)
+        row['Days_Since_IPO'] = days_since_ipo
 
-    # Fetch financial data up to the filing date
-    data = fetch_financial_data(ticker, filing_date)
+        # Fetch financial data up to the filing date
+        data = fetch_financial_data(ticker, filing_date)
+        
+        # Calculate financial ratios
+        financial_ratios = calculate_financial_ratios(data)
+        
+        if financial_ratios:
+            row.update(financial_ratios)
+            return row
     
-    # Calculate financial ratios
-    financial_ratios = calculate_financial_ratios(data)
-    
-    if financial_ratios:
-        row.update(financial_ratios)
-        return row
-    
-    return None
+    except (json.decoder.JSONDecodeError, KeyError) as e:
+        print(f"Failed to fetch metadata for {ticker}: {e}")
+        return None
 

@@ -50,20 +50,28 @@ class FeatureScraper:
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
         self.data = process_dates(self.data)
-        # Filter out entries where Filing Date is less than 30 business days in the past
+        
+        # Filter out entries where Filing Date is less than 20 business days in the past
         cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(20)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
         print(f"{len(self.data)} entries remained after filtering for cutoff date > 20 business days ago!")
+        
         self.data = clean_numeric_columns(self.data)
+        
+        # Drop rows where ΔOwn is negative
+        self.data = self.data[self.data['ΔOwn'] >= 0]
+        print(f"{len(self.data)} entries remained after dropping rows with negative ΔOwn!")
+        
         self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)
+        
         # Group by Ticker and Filing Date, then aggregate
         self.data = aggregate_group(self.data)
+        
         self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
-        # Drop rows with any NaN in the specified columns
         self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after formatting and aggregating!")
-    
+        print(f"{len(self.data)} entries remained after aggregating!")
+        
     def add_technical_indicators(self):
         rows = self.data.to_dict('records')
         with Pool(cpu_count()) as pool:
@@ -78,6 +86,11 @@ class FeatureScraper:
         with Pool(cpu_count()) as pool:
             processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows)))
         self.data = pd.DataFrame(filter(None, processed_rows))
+        
+        sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
+        self.data = pd.concat([self.data, sector_dummies], axis=1)
+        self.data.drop(columns=['Sector'], inplace=True)
+        
         self.data.dropna(inplace=True)
         print(f"{len(self.data)} entries remained after adding financial ratios!")
 
@@ -120,28 +133,6 @@ class FeatureScraper:
         
         summary_df.to_excel(output_file, sheet_name='Feature Distribution')
         print(f"Feature distribution summary saved to {output_file}.")
-        
-    def clip_non_categorical_features(self):
-        """Clip non-categorical features at the 1st and 99th percentiles."""
-        non_categorical_columns = self.data.select_dtypes(include=[np.number]).columns
-
-        for column in non_categorical_columns:
-            lower_bound = self.data[column].quantile(0.01)
-            upper_bound = self.data[column].quantile(0.99)
-            self.data[column] = self.data[column].clip(lower=lower_bound, upper=upper_bound)
-            
-        print("Clipped non-categorical features at the 1st and 99th percentiles.")
-
-    def normalize_non_categorical_features(self):
-        """Apply Min-Max Normalization to non-categorical features."""
-        non_categorical_columns = self.data.select_dtypes(include=[np.number]).columns
-
-        for column in non_categorical_columns:
-            min_value = self.data[column].min()
-            max_value = self.data[column].max()
-            self.data[column] = (self.data[column] - min_value) / (max_value - min_value)
-            
-        print("Applied Min-Max Normalization to non-categorical features.")
     
     def save_to_excel(self, file_path='output.xlsx'):
         """Save the self.data DataFrame to an Excel file."""
@@ -185,20 +176,16 @@ class FeatureScraper:
         self.fetch_data_from_pages(num_pages)
         self.save_to_excel('raw/features_raw.xlsx')
         self.clean_table()
-        self.save_to_excel('interim/features_formatted.xlsx')
+        self.save_to_excel('interim/1_features_formatted.xlsx')
         self.add_technical_indicators()
-        self.save_to_excel('interim/features_TI.xlsx')
+        self.save_to_excel('interim/2_features_TI.xlsx')
         self.add_financial_ratios()
-        self.save_to_excel('interim/features_TI_FR.xlsx')
+        self.save_to_excel('interim/3_features_TI_FR.xlsx')
         self.add_insider_transactions()
-        self.save_to_excel('interim/features_TI_FR_IT.xlsx')
+        self.save_to_excel('processed/features_full.xlsx')
         self.save_feature_distribution('output/feature_distribution.xlsx')
-        self.clip_non_categorical_features()
-        self.save_to_excel('interim/features_TI_FR_IT_clip.xlsx')
-        self.normalize_non_categorical_features()
-        self.save_to_excel('processed/features_processed.xlsx')
         
 if __name__ == "__main__":
     feature_scraper = FeatureScraper()
-    feature_scraper.run(num_pages=5)
+    feature_scraper.run(num_pages=100)
     

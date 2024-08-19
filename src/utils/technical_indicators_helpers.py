@@ -132,18 +132,19 @@ def process_ticker_technical_indicators(row):
     # Download stock and benchmark data
     stock_data, benchmark_data = download_stock_data(ticker, filing_date, max_period=50, interval='1d', benchmark_ticker='SPY')
     
-    if stock_data is not None and benchmark_data is not None:
-        # Calculate technical indicators
-        indicators = calculate_technical_indicators(row, stock_data)
-        # Calculate alpha-related indicators
-        alpha_indicators = calculate_alpha_indicators(stock_data, benchmark_data)
-        # Merge all indicators
-        indicators.update(alpha_indicators)
-        # Normalize indicators as needed
-        normalized_indicators = normalize_indicators(indicators, stock_data)
-        # Update the row with all indicators
-        for key, value in normalized_indicators.items():
-            row[key] = value
+    if stock_data is None or benchmark_data is None:
+        return None
+    
+    # Calculate technical indicators
+    indicators = calculate_technical_indicators(row, stock_data)
+    # Calculate alpha-related indicators
+    alpha_indicators = calculate_alpha_indicators(stock_data, benchmark_data)
+    # Merge all indicators
+    indicators.update(alpha_indicators)
+    # Normalize indicators as needed
+    normalized_indicators = normalize_indicators(indicators, stock_data)
+    # Update the row with all indicators
+    for key, value in normalized_indicators.items():
+        row[key] = value
 
-        return row
-    return None
+    return row
