@@ -18,5 +18,5 @@ def download_stock_data(ticker, filing_date, max_period=50, interval='1d', bench
                     return None, None
                 return stock_data, benchmark_data
             except Exception as e:
-                print(f"Failed to download data for {ticker}: {e}")
-                return None
+                # print(f"Failed to download data for {ticker}: {e}")
+                return None, None

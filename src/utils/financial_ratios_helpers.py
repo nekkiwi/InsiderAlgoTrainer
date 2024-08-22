@@ -10,8 +10,10 @@ def fetch_financial_data(ticker, filing_date):
     with open(os.devnull, 'w') as fnull:
         with contextlib.redirect_stdout(fnull), contextlib.redirect_stderr(fnull):
             stock = yf.Ticker(ticker)
-            
-            info = stock.info
+            try:
+                info = stock.info
+            except TypeError as e:
+                return None
 
             # Ensure filing_date is a string in the format 'YYYY-MM-DD'
             filing_date_str = filing_date.strftime('%Y-%m-%d')

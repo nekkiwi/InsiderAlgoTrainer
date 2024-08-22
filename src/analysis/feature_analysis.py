@@ -231,7 +231,7 @@ class FeatureAnalyzer:
         """Run the full analysis pipeline."""
         self.data.drop(columns=['Ticker', 'Filing Date'], inplace=True)
         self.identify_feature_types()
-        self.filter_low_variance_features(variance_threshold=0.02, categorical_threshold=0.02)
+        self.filter_low_variance_features(variance_threshold=0.01, categorical_threshold=0.01)
         self.clip_continuous_features(lower=0.01, upper=0.99)
         self.normalize_continuous_features()
         self.calculate_correlations()

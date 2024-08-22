@@ -183,5 +183,5 @@ class FeatureScraper:
         
 if __name__ == "__main__":
     feature_scraper = FeatureScraper()
-    feature_scraper.run(num_months=100)
+    feature_scraper.run(num_months=12)
     
