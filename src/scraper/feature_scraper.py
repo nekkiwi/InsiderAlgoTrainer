@@ -3,48 +3,63 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import sys
 import os
-from io import StringIO
 import openpyxl
 import yfinance as yf
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import numpy as np
+from datetime import datetime
+from datetime import timedelta
 
 # Add the 'src' directory to the system path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from utils.feature_scraper_helpers import parse_titles, clean_numeric_columns, process_dates, aggregate_group, get_recent_trades
-from utils.technical_indicators_helpers import process_ticker_technical_indicators
-from utils.financial_ratios_helpers import process_ticker_financial_ratios
+from utils.feature_scraper_helpers import *
+from utils.technical_indicators_helpers import *
+from utils.financial_ratios_helpers import *
 
 class FeatureScraper:
-    def __init__(self, base_url=None):
-        self.base_url = base_url or "http://openinsider.com/screener?s=&o=&pl=1&ph=&ll=&lh=&fd=0&fdr=&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=10&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=0&cnt=1000&page="
+    def __init__(self):
+        self.base_url = "http://openinsider.com/screener?"
         self.data = pd.DataFrame()
+        
+    def process_web_page(self, date_range):
+        start_date, end_date = date_range
+        url = f"{self.base_url}pl=1&ph=&ll=&lh=&fd=-1&fdr={start_date.month}%2F{start_date.day}%2F{start_date.year}+-+{end_date.month}%2F{end_date.day}%2F{end_date.year}&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=10&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=0&cnt=1000&page=1"
 
-    def get_html(self, page_num):
-        url = self.base_url + str(page_num)
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.text
+        df = fetch_and_parse(url)
 
-    def parse_table(self, html):
-        soup = BeautifulSoup(html, "html.parser")
-        table = soup.find("table", {"class": "tinytable"})
-        df = pd.read_html(StringIO(str(table)))[0]
-        # Clean up column names by replacing \xa0 with a regular space
-        df.columns = df.columns.str.replace('\xa0', ' ', regex=False)
+        if df is not None:
+            start_date_str = start_date.strftime('%d/%m/%Y')
+            end_date_str = end_date.strftime('%d/%m/%Y')
+            # print(f"{len(df)} entries extracted from {start_date_str} to {end_date_str}!")
+        else:
+            print(f"No data found for the period from {start_date.strftime('%d/%m/%Y')} to {end_date.strftime('%d/%m/%Y')}.")
+
         return df
-    
-    def fetch_and_parse(self, page_num):
-        html = self.get_html(page_num)
-        return self.parse_table(html)
 
-    def fetch_data_from_pages(self, num_pages=1):
+    def fetch_data_from_pages(self, num_months):
+        end_date = datetime.now() - timedelta(days=30)  # Start 1 month ago
+        date_ranges = []
+
+        # Prepare the date ranges
+        for _ in range(num_months):
+            start_date = end_date - timedelta(days=30)  # Each range is 1 month
+            date_ranges.append((start_date, end_date))
+            end_date = start_date  # Move back another month
+
+        # Use multiprocessing to fetch and parse data in parallel
         with Pool(cpu_count()) as pool:
-            data_frames = list(tqdm(pool.imap(self.fetch_and_parse, range(1, num_pages + 1)), total=num_pages))
-        self.data = pd.concat(data_frames, ignore_index=True)
-        print(f"{len(self.data)} entries extracted from {num_pages} pages!")
+            data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges)))
+
+        # Filter out None values (pages where no valid table was found)
+        data_frames = [df for df in data_frames if df is not None]
+
+        if data_frames:
+            self.data = pd.concat(data_frames, ignore_index=True)
+            print(f"{len(self.data)} total entries extracted from pages!")
+        else:
+            print("No data could be extracted.")
     
     def clean_table(self):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
@@ -54,13 +69,11 @@ class FeatureScraper:
         # Filter out entries where Filing Date is less than 20 business days in the past
         cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(20)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
-        print(f"{len(self.data)} entries remained after filtering for cutoff date > 20 business days ago!")
         
         self.data = clean_numeric_columns(self.data)
         
         # Drop rows where ΔOwn is negative
         self.data = self.data[self.data['ΔOwn'] >= 0]
-        print(f"{len(self.data)} entries remained after dropping rows with negative ΔOwn!")
         
         self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)
@@ -70,7 +83,7 @@ class FeatureScraper:
         
         self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
         self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after aggregating!")
+        print(f"{len(self.data)} entries remained after cleaning and aggregating!")
         
     def add_technical_indicators(self):
         rows = self.data.to_dict('records')
@@ -106,13 +119,6 @@ class FeatureScraper:
         print(f"{len(self.data)} entries remained after adding insider transactions!")
         
     def save_feature_distribution(self, output_file='feature_distribution.xlsx'):
-        """
-        Summarizes the distribution of each column in the DataFrame and saves it as an Excel sheet.
-
-        Args:
-        - data (pd.DataFrame): The DataFrame containing the features to be summarized.
-        - output_file (str): The path to the output Excel file.
-        """
         # Define the quantiles and statistics to be calculated
         quantiles = [0, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1]
         summary_df = pd.DataFrame()
@@ -150,16 +156,6 @@ class FeatureScraper:
             print("No data to save.")
             
     def load_sheet(self, file_path='output.xlsx'):
-        """
-        Load a specified sheet from an Excel file.
-
-        Args:
-        - file_path (str): The path to the Excel file.
-        - sheet_name (str): The name of the sheet to load.
-
-        Returns:
-        - pd.DataFrame: The DataFrame containing the loaded sheet data.
-        """
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         file_path = os.path.join(data_dir, file_path)
 
@@ -172,8 +168,8 @@ class FeatureScraper:
         else:
             print(f"File '{file_path}' does not exist.")
         
-    def run(self, num_pages):
-        self.fetch_data_from_pages(num_pages)
+    def run(self, num_months):
+        self.fetch_data_from_pages(num_months)
         self.save_to_excel('raw/features_raw.xlsx')
         self.clean_table()
         self.save_to_excel('interim/1_features_formatted.xlsx')
@@ -187,5 +183,5 @@ class FeatureScraper:
         
 if __name__ == "__main__":
     feature_scraper = FeatureScraper()
-    feature_scraper.run(num_pages=100)
+    feature_scraper.run(num_months=100)
     

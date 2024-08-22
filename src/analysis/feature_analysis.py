@@ -135,11 +135,11 @@ class FeatureAnalyzer:
         
         print(f"Dropped {len(to_drop)} highly correlated features: {to_drop}")
 
-    def clip_continuous_features(self):
+    def clip_continuous_features(self, lower=0.01, upper=0.99):
         """Clip continuous features at the 1st and 99th percentiles."""
         for column in self.continuous_features:
-            lower_bound = self.data[column].quantile(0.01)
-            upper_bound = self.data[column].quantile(0.99)
+            lower_bound = self.data[column].quantile(lower)
+            upper_bound = self.data[column].quantile(upper)
             self.data[column] = self.data[column].clip(lower=lower_bound, upper=upper_bound)
         print("Clipped continuous features at the 1st and 99th percentiles.")
 
@@ -231,13 +231,13 @@ class FeatureAnalyzer:
         """Run the full analysis pipeline."""
         self.data.drop(columns=['Ticker', 'Filing Date'], inplace=True)
         self.identify_feature_types()
-        self.filter_low_variance_features()
-        self.clip_continuous_features()
+        self.filter_low_variance_features(variance_threshold=0.02, categorical_threshold=0.02)
+        self.clip_continuous_features(lower=0.01, upper=0.99)
         self.normalize_continuous_features()
         self.calculate_correlations()
         self.plot_correlation_heatmap()
         self.plot_sorted_correlations()
-        self.drop_highly_correlated_features()
+        self.drop_highly_correlated_features(threshold=0.9)
         self.save_to_excel('processed/features_processed.xlsx')
         
 if __name__ == "__main__":    
