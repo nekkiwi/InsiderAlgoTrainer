@@ -3,6 +3,27 @@ from utils.date_helpers import get_next_market_open
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
+from io import StringIO
+from functools import partial
+
+def get_html(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
+
+def parse_table(html):
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", {"class": "tinytable"})
+    if not table:
+        return None
+    df = pd.read_html(StringIO(str(table)))[0]
+    # Clean up column names by replacing \xa0 with a regular space
+    df.columns = df.columns.str.replace('\xa0', ' ', regex=False)
+    return df
+
+def fetch_and_parse(url):
+    html = get_html(url)
+    return parse_table(html)
 
 def process_dates(df):
     # Convert date strings to datetime objects
@@ -22,6 +43,7 @@ def clean_numeric_columns(df):
     return df
 
 def parse_titles(df):
+    df['Title'] = df['Title'].fillna('')
     df['CEO'] = df['Title'].apply(lambda title: int('CEO' in title))
     df['CFO'] = df['Title'].apply(lambda title: int('CFO' in title))
     df['COO'] = df['Title'].apply(lambda title: int('COO' in title))
