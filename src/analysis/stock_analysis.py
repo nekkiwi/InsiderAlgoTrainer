@@ -1,110 +1,148 @@
 import pandas as pd
-from datetime import datetime, timedelta
-import os
-from multiprocessing import Pool, cpu_count
-from tqdm import tqdm
-import sys
+import matplotlib.pyplot as plt
+import numpy as np
 import os
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from utils.stock_analysis_helpers import (
-    download_daily_stock_data,
-    calculate_alpha,
-    plot_stock_histories,
-    plot_median_mean_alpha,
-    plot_median_mean_return
-)
-
-class StockHistoryAnalyzer:
-    def __init__(self, timeout=30, limit_array=None, stop_array=None):
+class StockAnalysis:
+    def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        self.features_file = os.path.join(data_dir, 'final/features_final.xlsx')
+        self.stock_returns_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
         self.output_dir = os.path.join(data_dir, 'output/stock_analysis')
-        self.timeout = timeout
-        self.limit_array = limit_array if limit_array is not None else [0.1]  # Default to 10% limit
-        self.stop_array = stop_array if stop_array is not None else [-0.05]  # Default to -5% stop
-        self.features_df = None
-        self.ticker_filing_dates = None
-        self.stock_data_dict = {}
-        self.spy_data = None
+        self.return_df = None
+        self.filtered_return_df = None
 
-    def load_features(self):
-        """Load the full features DataFrame and extract Ticker and Filing Date columns."""
-        self.features_df = pd.read_excel(self.features_file)
-        self.features_df['Filing Date'] = pd.to_datetime(self.features_df['Filing Date'], dayfirst=True)
-        self.ticker_filing_dates = self.features_df[['Ticker', 'Filing Date']]
+    def load_data(self):
+        """Load the stock returns data."""
+        self.return_df = pd.read_excel(self.stock_returns_file, sheet_name='Returns')
+        
+    def filter_jumps(self, max_jump=1):
+        """Remove rows with jumps (consecutive differences) higher than a specified threshold."""
+        # Drop Ticker and Filing Date columns to focus on return data
+        returns_data = self.return_df.drop(columns=['Ticker', 'Filing Date'])
+        
+        # Calculate consecutive differences and identify rows with jumps > specified threshold
+        jumps = returns_data.diff(axis=1).abs().dropna(axis=1)
+        mask = (jumps <= max_jump).all(axis=1)
+        
+        # Filter the return_df to remove those rows
+        self.filtered_return_df = self.return_df[mask]
+        print(f"Removed {len(mask) - mask.sum()} rows with jumps greater than {int(max_jump*100)}%.")
 
-    def download_all_stock_data(self):
-        """Download stock data for all tickers from their filing date until the timeout period."""
-        ticker_info_list = self.ticker_filing_dates.values.tolist()
-        end_date = datetime.now()
-        self.spy_data = download_daily_stock_data('SPY', self.ticker_filing_dates['Filing Date'].min(), end_date)
+    def plot_stock_returns(self, filtered=False):
+        """Plot stock returns with 5th and 95th percentiles, mean, and median."""
+        # Select the appropriate dataset
+        if filtered:
+            returns_data = self.filtered_return_df.drop(columns=['Ticker', 'Filing Date'])
+        else:
+            returns_data = self.return_df.drop(columns=['Ticker', 'Filing Date'])
+        
+        # Calculate mean, median, 5th and 95th percentiles
+        mean_returns = returns_data.mean()
+        median_returns = returns_data.median()
+        lower_bound = returns_data.quantile(0.05)
+        upper_bound = returns_data.quantile(0.95)
 
-        with Pool(cpu_count()) as pool:
-            results = list(tqdm(pool.imap(self.download_ticker_data, ticker_info_list), total=len(ticker_info_list)))
+        # Get mean and median at day 20
+        mean_day_20 = mean_returns.iloc[-1]
+        median_day_20 = median_returns.iloc[-1]
 
-        # Filter and store the results
-        for ticker, data in results:
-            if data is not None:
-                self.stock_data_dict[ticker] = data
+        # Set up the plot
+        plt.figure(figsize=(12, 8))
+        x_values = np.arange(1, len(mean_returns) + 1)
 
-    def download_ticker_data(self, ticker_info):
-        """Helper function to download stock data for a single ticker."""
-        ticker, filing_date = ticker_info
-        end_date = min(filing_date + timedelta(days=self.timeout), datetime.now())
-        return ticker, download_daily_stock_data(ticker, filing_date, end_date)
+        # Plot the 5th to 95th percentile range as a shaded area
+        plt.fill_between(x_values, lower_bound, upper_bound, color='gray', alpha=0.3, label='5th-95th Percentile')
 
-    def analyze_stock_histories(self):
-        """Analyze stock histories and plot the required metrics."""
-        alpha_data = {}
-        return_data = {}
+        # Plot the mean and median returns
+        plt.plot(x_values, mean_returns, color='blue', label='Mean Return')
+        plt.plot(x_values, median_returns, color='orange', label='Median Return')
 
-        for ticker, stock_data in self.stock_data_dict.items():
-            stock_returns = stock_data['Close'].pct_change().cumsum()
-            spy_returns = self.spy_data['Close'].pct_change().cumsum()
-            alpha = calculate_alpha(stock_returns, spy_returns)
+        # Add a red dotted line at 0% return
+        plt.axhline(y=0, color='red', linestyle='--', label='0% Return')
 
-            alpha_data[ticker] = alpha
-            return_data[ticker] = stock_returns
+        # Formatting the plot
+        plt.xticks(ticks=x_values)
+        plt.xlabel('Day')
+        plt.ylabel('Return')
 
-        # Plot all stock histories
-        plot_stock_histories(self.stock_data_dict, self.output_dir)
+        # Adapt y-limits to the data
+        plt.ylim(-0.3, 0.3)
 
-        # Plot median and mean alpha over time
-        plot_median_mean_alpha(alpha_data, self.output_dir)
+        plt.title(f'Stock Returns Over 20 Days | Mean: {mean_day_20*100:.2f}%, Median: {median_day_20*100:.2f}% on Day 20')
+        plt.legend(loc='best')
 
-        # Plot median and mean return over time
-        plot_median_mean_return(return_data, self.output_dir)
+        # Create output directory if it doesn't exist
+        os.makedirs(self.output_dir, exist_ok=True)
 
-    def save_final_metrics(self):
-        """Save final metrics for each strategy in an Excel sheet."""
-        final_metrics = {}
+        # Save and show the plot
+        output_path = os.path.join(self.output_dir, 'stock_returns_analysis.png')
+        if filtered:
+            output_path = os.path.join(self.output_dir, 'stock_returns_analysis_filtered.png')
+        plt.savefig(output_path, dpi=300)
+        print(f"Stock return summary figure saved at {output_path}")
 
-        for limit in self.limit_array:
-            for stop in self.stop_array:
-                strategy_name = f'lim_{limit}_stop_{stop}'
-                final_metrics[strategy_name] = self.calculate_final_strategy_metrics(limit, stop)
+    def plot_all_stock_returns(self, filtered=False):
+        """Plot all stock returns overlayed on the same plot."""
+        # Select the appropriate dataset
+        if filtered:
+            returns_data = self.filtered_return_df.drop(columns=['Ticker', 'Filing Date'])
+        else:
+            returns_data = self.return_df.drop(columns=['Ticker', 'Filing Date'])
 
-        final_metrics_df = pd.DataFrame(final_metrics)
-        final_metrics_df.to_excel(os.path.join(self.output_dir, 'final_strategy_metrics.xlsx'))
+        # Set up the plot
+        plt.figure(figsize=(12, 8))
+        x_values = np.arange(1, len(returns_data.columns) + 1)
 
-    def calculate_final_strategy_metrics(self, limit, stop):
-        """Calculate final metrics for a given strategy (Limit, Stop, Timeout)."""
-        # Implement logic to calculate final metrics like Median Return, Quartiles Return, etc.
-        # For each strategy and populate the metrics dictionary accordingly
-        metrics = {}
-        return metrics
+        # Plot all stock returns
+        for _, row in returns_data.iterrows():
+            plt.plot(x_values, row, color='gray', alpha=0.5)
+
+        # Formatting the plot
+        plt.xticks(ticks=x_values)
+        plt.xlabel('Day')
+        plt.ylabel('Return')
+        plt.title('Overlay of All Stock Returns Over 20 Days')
+        
+        # Add a red dotted line at 0% return
+        plt.axhline(y=0, color='red', linestyle='--', label='0% Return')
+
+        # Create output directory if it doesn't exist
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        # Save and show the plot
+        output_path = os.path.join(self.output_dir, 'all_stock_returns_overlay.png')
+        if filtered:
+            output_path = os.path.join(self.output_dir, 'all_stock_returns_overlay_filtered.png')
+        plt.savefig(output_path, dpi=300)
+        print(f"All stock returns figure saved at {output_path}")
+
+    def save_summary_statistics(self):
+        """Save summary statistics (min, 25%, median, mean, 75%, max) for each timestep to an Excel sheet."""
+        returns_data = self.return_df.drop(columns=['Ticker', 'Filing Date'])
+        filtered_returns_data = self.filtered_return_df.drop(columns=['Ticker', 'Filing Date'])
+
+        summary_stats = returns_data.describe(percentiles=[0.25, 0.5, 0.75]).T
+        summary_stats = summary_stats[['min', '25%', '50%', 'mean', '75%', 'max']]*100
+
+        filtered_summary_stats = filtered_returns_data.describe(percentiles=[0.25, 0.5, 0.75]).T
+        filtered_summary_stats = filtered_summary_stats[['min', '25%', '50%', 'mean', '75%', 'max']]*100
+
+        output_path = os.path.join(self.output_dir, 'stock_returns_summary_stats.xlsx')
+        with pd.ExcelWriter(output_path) as writer:
+            summary_stats.to_excel(writer, sheet_name='Original', index_label='Day')
+            filtered_summary_stats.to_excel(writer, sheet_name='Filtered', index_label='Day')
+        print(f"Summary statistics saved to {output_path}")
 
     def run(self):
-        """Run the full stock history analysis."""
-        self.load_features()
-        self.download_all_stock_data()
-        self.analyze_stock_histories()
-        self.save_final_metrics()
-        print("Stock history analysis completed. Check output directory for plots and metrics.")
+        """Run the stock return analysis and plot generation."""
+        self.load_data()
+        self.plot_all_stock_returns(filtered=False)
+        self.plot_stock_returns(filtered=False)
+        self.filter_jumps(max_jump=0.5) 
+        self.plot_all_stock_returns(filtered=True)
+        self.plot_stock_returns(filtered=True)
+        self.save_summary_statistics()
 
 if __name__ == "__main__":
-    analyzer = StockHistoryAnalyzer(timeout=30, limit_array=[0.1, 0.2], stop_array=[-0.05, -0.1])
-    analyzer.run()
+    analysis = StockAnalysis()
+    analysis.run()
