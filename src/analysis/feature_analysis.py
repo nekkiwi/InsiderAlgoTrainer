@@ -4,7 +4,7 @@ import sys
 
 # Add the 'src' directory to the system path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.utils.feature_analysis_helpers import *
+from utils.feature_analysis_helpers import *
 
 class FeatureAnalyzer:
     def __init__(self):
