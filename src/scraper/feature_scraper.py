@@ -26,17 +26,7 @@ class FeatureScraper:
     def process_web_page(self, date_range):
         start_date, end_date = date_range
         url = f"{self.base_url}pl=1&ph=&ll=&lh=&fd=-1&fdr={start_date.month}%2F{start_date.day}%2F{start_date.year}+-+{end_date.month}%2F{end_date.day}%2F{end_date.year}&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=10&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=0&cnt=1000&page=1"
-
-        df = fetch_and_parse(url)
-
-        if df is not None:
-            start_date_str = start_date.strftime('%d/%m/%Y')
-            end_date_str = end_date.strftime('%d/%m/%Y')
-            # print(f"{len(df)} entries extracted from {start_date_str} to {end_date_str}!")
-        else:
-            print(f"No data found for the period from {start_date.strftime('%d/%m/%Y')} to {end_date.strftime('%d/%m/%Y')}.")
-
-        return df
+        return fetch_and_parse(url)
 
     def fetch_data_from_pages(self, num_months):
         end_date = datetime.now() - timedelta(days=30)  # Start 1 month ago
@@ -178,7 +168,7 @@ class FeatureScraper:
         self.add_financial_ratios()
         self.save_to_excel('interim/3_features_TI_FR.xlsx')
         self.add_insider_transactions()
-        self.save_to_excel('processed/features_full.xlsx')
+        self.save_to_excel('interim/4_features_TI_FR_IT.xlsx')
         self.save_feature_distribution('output/feature_distribution.xlsx')
         
 if __name__ == "__main__":

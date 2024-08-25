@@ -201,4 +201,3 @@ def process_ticker_financial_ratios(row):
     except (json.decoder.JSONDecodeError, KeyError) as e:
         print(f"Failed to fetch metadata for {ticker}: {e}")
         return None
-
