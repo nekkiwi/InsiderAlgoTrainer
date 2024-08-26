@@ -9,23 +9,25 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.target_scraper_helpers import process_targets, calculate_target_distribution
 
 class TargetScraper:
-    def __init__(self, limit_array=None, stop_array=None):
+    def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.stock_data_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
         self.output_file = os.path.join(data_dir, 'final/targets_final.xlsx')
         self.distribution_output_file = os.path.join(data_dir, 'output/targets_distribution.xlsx')
         self.stock_data_df = None
         self.results = {}
-        self.limit_array = limit_array if limit_array is not None else [0.1]  # Default to 10% limit
-        self.stop_array = stop_array if stop_array is not None else [-0.05]  # Default to -5% stop
+        self.limit_array = []
+        self.stop_array = []
 
     def load_stock_data(self):
         """Load stock data from the pre-downloaded Excel file."""
         self.stock_data_df = pd.read_excel(self.stock_data_file, sheet_name='Stock Data')
 
-    def create_target_data(self):
+    def create_target_data(self, limit_array, stop_array):
         """Create target data for each ticker-filing datetime combination."""
         ticker_info_list = self.stock_data_df[['Ticker', 'Filing Date']].values.tolist()
+        self.limit_array = limit_array
+        self.stop_array = stop_array
 
         print("Processing targets in parallel...")
         with Pool(cpu_count()) as pool:
@@ -81,13 +83,15 @@ class TargetScraper:
         print(f"Target distribution successfully saved to {self.distribution_output_file}.")
 
 
-    def run(self):
+    def run(self, limit_array, stop_array):
         """Run the full process to calculate targets and save the results."""
         self.load_stock_data()
-        self.create_target_data()
+        self.create_target_data(limit_array, stop_array)
         self.save_to_excel()
         self.save_target_distribution()
 
 if __name__ == "__main__":
-    scraper = TargetScraper(limit_array=[0.1, 0.2], stop_array=[-0.05, -0.1])
-    scraper.run()
+    scraper = TargetScraper()
+    limit_array=[0.06, 0.08, 0.1, 0.12]
+    stop_array=[-0.06, -0.08, -0.1, -0.12]
+    scraper.run(limit_array, stop_array)

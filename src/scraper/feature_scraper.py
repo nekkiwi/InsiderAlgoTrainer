@@ -160,7 +160,7 @@ class FeatureScraper:
         
     def run(self, num_months):
         self.fetch_data_from_pages(num_months)
-        self.save_to_excel('raw/features_raw.xlsx')
+        self.save_to_excel('interim/0_features_raw.xlsx')
         self.clean_table()
         self.save_to_excel('interim/1_features_formatted.xlsx')
         self.add_technical_indicators()
