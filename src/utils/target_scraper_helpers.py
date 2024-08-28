@@ -8,12 +8,12 @@ def process_targets(stock_data, limit_array, stop_array):
         for stop in stop_array:
             target_key = (limit, stop)
             targets[target_key] = {
-                'Spike up': 0,
-                'Spike down': 0,
-                'Limit occurred first': 0,
-                'Stop occurred first': 0,
-                'Return at cashout': 0.0,
-                'Days at cashout': 0,
+                'spike-up': 0,
+                'spike-down': 0,
+                'limit-occurred-first': 0,
+                'stop-occurred-first': 0,
+                'return-at-cashout': 0.0,
+                'days-at-cashout': 0,
             }
 
             for i in range(1, len(stock_data)):
@@ -21,27 +21,27 @@ def process_targets(stock_data, limit_array, stop_array):
 
                 # Spike detection
                 if (stock_data.iloc[i] - stock_data.iloc[i-1]) / stock_data.iloc[i-1] > 0.1:
-                    targets[target_key]['Spike up'] = 1
+                    targets[target_key]['spike-up'] = 1
                 if (stock_data.iloc[i-1] - stock_data.iloc[i]) / stock_data.iloc[i-1] > 0.1:
-                    targets[target_key]['Spike down'] = 1
+                    targets[target_key]['spike-down'] = 1
 
                 # Check for limit/stop
                 if price_change >= limit:
-                    targets[target_key]['Limit occurred first'] = 1
-                    targets[target_key]['Days at cashout'] = i
-                    targets[target_key]['Return at cashout'] = price_change
+                    targets[target_key]['limit-occurred-first'] = 1
+                    targets[target_key]['days-at-cashout'] = i
+                    targets[target_key]['return-at-cashout'] = price_change
                     break
 
                 if price_change <= stop:
-                    targets[target_key]['Stop occurred first'] = 1
-                    targets[target_key]['Days at cashout'] = i
-                    targets[target_key]['Return at cashout'] = price_change
+                    targets[target_key]['stop-occurred-first'] = 1
+                    targets[target_key]['days-at-cashout'] = i
+                    targets[target_key]['return-at-cashout'] = price_change
                     break
 
             # If no limit or stop was reached
-            if targets[target_key]['Days at cashout'] == 0:
-                targets[target_key]['Days at cashout'] = len(stock_data) - 1
-                targets[target_key]['Return at cashout'] = price_change
+            if targets[target_key]['days-at-cashout'] == 0:
+                targets[target_key]['days-at-cashout'] = len(stock_data) - 1
+                targets[target_key]['return-at-cashout'] = price_change
 
     return targets
 
@@ -67,7 +67,7 @@ def calculate_target_distribution(results):
 
                 distribution_data.append({
                     'Limit-Stop': limit_stop_key,
-                    'Target': metric,
+                    'Target': metric.replace(" ", "-").lower(),
                     'min': distribution_metrics['min'],
                     '1%': distribution_metrics['1%'],
                     '5%': distribution_metrics['5%'],

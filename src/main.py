@@ -7,6 +7,7 @@ from analysis.feature_selector import FeatureSelector
 from analysis.feature_analysis import FeatureAnalyzer
 from analysis.stock_analysis import StockAnalysis
 from training.train import ModelTrainer
+from training.evaluate import StockEvaluator
 
 def scrape_data(num_months):    
     # Initialize and run the Feature Scraper
@@ -56,7 +57,7 @@ def scrape_targets(limit_array, stop_array):
     # Ensure the scraper has completed before moving on
     sys.stdout.flush()
     
-def train_model(target_name, model_type):
+def select_features():
     # Initialize and run the Feature Selector
     print("Starting Feature Selector...")
     selector = FeatureSelector()
@@ -65,7 +66,8 @@ def train_model(target_name, model_type):
 
     # Ensure the feature selector has completed before moving on
     sys.stdout.flush()
-
+    
+def train_model(target_name, model_type):
     # Initialize and run the Model Trainer
     print("Starting Model Trainer...")
     trainer = ModelTrainer()
@@ -74,20 +76,46 @@ def train_model(target_name, model_type):
     
     # Ensure the scraper has completed before moving on
     sys.stdout.flush()
+    
+    
+def evaluate_model(criterion, model_type):
+    evaluator = StockEvaluator(model_type, criterion)
+    evaluator.run_evaluation()
+    
+    # Ensure the scraper has completed before moving on
+    sys.stdout.flush()
+    
+    # Initialize the StockAnalysis instance
+    analysis = StockAnalysis()
+    analysis.run_all_simulations(model_type, criterion)
+    
+    # Ensure the scraper has completed before moving on
+    sys.stdout.flush()
 
 def main():    
+    ########################################################################
+    # Scrape Features and Stock Data for num_months
     num_months=36
-    
-    limit_array=[0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
-    stop_array=[-0.1, -0.09, -0.08, -0.07, -0.06, -0.05, -0.04]
-    
-    target_name="Limit occurred first"  # [Spike up,        Spike down,     Limit occurred first,   Stop occurred first,    Return at cashout,      Days at cashout]
-    model_type="Neural Net"             # [RandomForest,    NaivesBayes,    RBF SVM,                Gaussian Process,       Neural Net]
     
     scrape_data(num_months)
     run_analysis()
+    
+    ########################################################################
+    # Scrape Targets and select features for each target
+    limit_array = [ 0.01, 0.02, 0.03, 0.04, 0.05, 0.06]
+    stop_array  = [-0.11, -0.1, -0.09, -0.08, -0.07, -0.06, -0.05]
+    
     scrape_targets(limit_array, stop_array)
-    train_model(target_name, model_type)
+    select_features()
+    
+    ########################################################################
+    # Train models to predict given targets using given models and evaluate
+    # Models: [RandomForest, NaivesBayes, RBF SVM, Gaussian Process, Neural Net]
+    # Targets: [spike-up, spike-down, limit-occurred-first, stop-occurred-first, return-at-cashout, days-at-cashout]
+    for model_type in ["RandomForest", "NaivesBayes", "RBF SVM", "Gaussian Process", "Neural Net"]:
+        train_model('limit-occurred-first', model_type)
+        train_model('stop-occurred-first', model_type)
+        evaluate_model('limit-stop', model_type)
 
 if __name__ == "__main__":
     main()

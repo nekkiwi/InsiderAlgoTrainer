@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import sys
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
 
 # Add the 'src' directory to the system path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -29,7 +30,7 @@ class FeatureSelector:
 
     def feature_selection_task(self, args):
         """Perform feature selection for a specific target."""
-        limit_value, stop_value, target_name, y, X_encoded = args
+        limit_value, stop_value, target_value, y, X_encoded = args
         selected_features, scores, p_values = select_features(X_encoded, y, self.p_threshold)
         
         sorted_features = sorted(zip(selected_features, scores[selected_features]), key=lambda x: x[1], reverse=True)
@@ -38,13 +39,12 @@ class FeatureSelector:
         result = {
             "Limit": limit_value,
             "Stop": stop_value,
-            "Target": target_name,
+            "Target": target_value,
             "Selected Features": selected_features,
             "Scores": scores[selected_features].tolist(),
             "p_values": p_values[selected_features].tolist()
         }
         
-        print(f"Limit: {limit_value:<4} | Stop: {stop_value:<6} | Target: {target_name:<20} | Features Selected: {len(selected_features):<2}/{X_encoded.shape[1]}")
         return result
 
     def perform_feature_selection(self, p_threshold=0.1):
@@ -69,7 +69,7 @@ class FeatureSelector:
         # Use ProcessPoolExecutor to parallelize the feature selection process
         with ProcessPoolExecutor() as executor:
             futures = [executor.submit(self.feature_selection_task, task) for task in tasks]
-            for future in as_completed(futures):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Feature Selection Progress"):
                 self.selected_features_dict.append(future.result())
 
         # Sort the results by Stop and then by Limit
@@ -77,16 +77,16 @@ class FeatureSelector:
         
         self.save_selected_features()
         
-        self.create_heatmap('Scores', "score_heatmap.png")
-        self.create_heatmap('p_values', "p_value_heatmap.png")
+        # self.create_heatmap('Scores', "score_heatmap.png")
+        # self.create_heatmap('p_values', "p_value_heatmap.png")
 
     def save_selected_features(self):
         """Save selected features to an Excel file."""
         excel_path = os.path.join(self.output_dir, "selected_features.xlsx")
         with pd.ExcelWriter(excel_path) as writer:
             for target_name, selections in pd.DataFrame(self.selected_features_dict).groupby('Target'):
-                sheet_data = selections.drop(columns=['Scores', 'p_values'], errors='ignore')
-                sheet_data.to_excel(writer, sheet_name=target_name, index=False)
+                sheet_data = selections.drop(columns=['Scores', 'p_values', 'Target'], errors='ignore')
+                sheet_data.to_excel(writer, sheet_name=target_name.replace(" ", "-").lower(), index=False)
         print(f"Selected features saved to {excel_path}")
 
     def create_heatmap(self, key, filename):

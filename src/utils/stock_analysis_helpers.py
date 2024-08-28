@@ -12,7 +12,7 @@ def filter_jumps(self, max_jump=1):
     
     # Filter the return_df to remove those rows
     self.return_df = self.return_df[mask]
-    print(f"Removed {len(mask) - mask.sum()} rows with jumps greater than {int(max_jump*100)}%.")
+    # print(f"Removed {len(mask) - mask.sum()} rows with jumps greater than {int(max_jump*100)}%.")
 
 def save_summary_statistics(return_df, output_dir, filtered=False):
     """Save summary statistics (min, 25%, median, mean, 75%, max) for each timestep to an Excel sheet."""
@@ -25,4 +25,4 @@ def save_summary_statistics(return_df, output_dir, filtered=False):
     sheet_name = 'Filtered' if filtered else 'Original'
     with pd.ExcelWriter(output_path, mode='w') as writer:
         summary_stats.to_excel(writer, sheet_name=sheet_name, index_label='Day')
-    print(f"Summary statistics saved to {output_path} in sheet {sheet_name}")
+    # print(f"Summary statistics saved to {output_path} in sheet {sheet_name}")
