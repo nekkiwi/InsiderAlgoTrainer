@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from multiprocessing import Pool, cpu_count
-from tqdm import tqdm  # Import tqdm for the progress bar
+from tqdm import tqdm
 
 class StockEvaluator:
     def __init__(self, model_name, criterion):
@@ -25,23 +25,14 @@ class StockEvaluator:
         """Load the predictions data and stock data."""
         self.predictions = {}
         
-        # Iterate over all files in the predictions directory
         for file_name in os.listdir(self.predictions_dir):
             if file_name.endswith('.xlsx'):
-                # Construct the full file path
                 file_path = os.path.join(self.predictions_dir, file_name)
-                
-                # Load the file and store it in the predictions dictionary
                 df = pd.read_excel(file_path)
-                
-                # Extract the limit and stop values from the filename
                 limit_stop = file_name.replace(f'pred_{self.model_short}_l', '').replace('.xlsx', '')
                 limit_value, stop_value = map(float, limit_stop.split('_s'))
-                
-                # Store the DataFrame in the dictionary with the limit and stop as the key
                 self.predictions[(limit_value, stop_value)] = df
 
-        # Load stock data
         self.stock_data = pd.read_excel(self.stock_data_file, sheet_name='Returns')
 
     def check_required_targets(self, df):
@@ -61,55 +52,84 @@ class StockEvaluator:
 
         return all(target in df.columns for target in required_targets)
 
-    def apply_criterion(self, df):
-        """Apply the specified criterion to filter the DataFrame."""
+    def determine_criterion_pass(self, df, type="Pred"):
+        """Determine whether each ticker passes the criterion."""
         if self.criterion == 'limit':
-            return df[df['Pred_limit-occurred-first'] == 1]
+            return (df[type+'_limit-occurred-first'] == 1).astype(int)
         elif self.criterion == 'stop':
-            return df[df['Pred_stop-occurred-first'] == 0]
+            return (df[type+'_stop-occurred-first'] == 0).astype(int)
         elif self.criterion == 'limit-stop':
-            return df[(df['Pred_limit-occurred-first'] == 1) & (df['Pred_stop-occurred-first'] == 0)]
+            return ((df[type+'_limit-occurred-first'] == 1) & (df[type+'_stop-occurred-first'] == 0)).astype(int)
         elif self.criterion == 'spike_up':
-            return df[df['Pred_spike-up'] == 1]
+            return (df[type+'_spike-up'] == 1).astype(int)
         elif self.criterion == 'spike_up-down':
-            return df[(df['Pred_spike-up'] == 1) & (df['Pred_spike-down'] == 0)]
+            return ((df[type+'_spike-up'] == 1) & (df[type+'_spike-down'] == 0)).astype(int)
         elif self.criterion == 'pos_return':
-            return df[df['Pred_return'] > 0]
+            return (df[type+'_return'] > 0).astype(int)
         elif self.criterion == 'high_return':
-            return df[df['Pred_return'] > 0.04]
+            return (df[type+'_return'] > 0.04).astype(int)
         else:
             raise ValueError(f"Unknown criterion: {self.criterion}")
 
     def simulate_buying(self, args):
-        """Simulate buying stocks based on filtered DataFrame."""
-        limit_value, stop_value, filtered_df = args
-        tickers = filtered_df['Ticker'].unique()
+        """Simulate buying stocks based on all ticker and filing date combinations and include criterion pass."""
+        limit_value, stop_value, df = args
         simulation_results = []
 
-        for ticker in tickers:
-            ticker_data = self.stock_data[self.stock_data['Ticker'] == ticker].iloc[:, 2:22]
-            for day in range(ticker_data.shape[1]):
-                if ticker_data.iloc[0, day] >= limit_value:
-                    selling_day = day + 1
-                    break
-                elif ticker_data.iloc[0, day] <= stop_value:
-                    selling_day = day + 1
-                    break
-            else:
-                selling_day = 20  # No limit or stop hit, sell on the last day
+        for _, row in df.iterrows():
+            ticker = row['Ticker']
+            filing_date = row['Filing Date']
 
-            filing_date = filtered_df[filtered_df['Ticker'] == ticker]['Filing Date'].values[0]
-            simulation_results.append({'Ticker': ticker, 'Filing Date': filing_date, 'Selling Day': selling_day})
+            # Extract data for this specific ticker and filing date
+            ticker_data = self.stock_data[(self.stock_data['Ticker'] == ticker) & (self.stock_data['Filing Date'] == filing_date)]
+            
+            if ticker_data.empty:
+                print(f"No stock data available for ticker {ticker} on filing date {filing_date}. Skipping.")
+                continue
+            
+            ticker_data = ticker_data.iloc[:, 2:22]  # Assuming the relevant data is in columns 2 to 22
+            limit_day, stop_day = None, None
+            limit_price, stop_price = None, None
+
+            for day in range(ticker_data.shape[1]):
+                price = ticker_data.iloc[0, day]
+                if limit_day is None and price >= limit_value:
+                    limit_day = day + 1
+                    limit_price = price
+                if stop_day is None and price <= stop_value:
+                    stop_day = day + 1
+                    stop_price = price
+
+                if limit_day is not None or stop_day is not None:
+                    break
+
+            selling_day = min(limit_day or 21, stop_day or 21) if limit_day or stop_day else 20
+            pred_criterion_pass = row['pred-criterion-pass']
+            gt_criterion_pass = row['gt-criterion-pass']
+
+            simulation_results.append({
+                'Ticker': ticker,
+                'Filing Date': filing_date,
+                'Selling Day': selling_day,
+                'Limit Day': limit_day,
+                'Stop Day': stop_day,
+                'Limit Price': limit_price,
+                'Stop Price': stop_price,
+                'Pred Criterion Pass': pred_criterion_pass,
+                'GT Criterion Pass': gt_criterion_pass
+            })
+
+        if not simulation_results:
+            print(f"No valid simulation results for limit {limit_value} and stop {stop_value}.")
+            return pd.DataFrame(), limit_value, stop_value
 
         return pd.DataFrame(simulation_results), limit_value, stop_value
 
+
     def save_simulation(self, simulation_df, limit_value, stop_value):
         """Save the simulation results to an Excel file."""
-        # Creating subdirectory for the model type
         model_output_dir = os.path.join(self.simulation_output_dir, self.model_name)
         os.makedirs(model_output_dir, exist_ok=True)
-        
-        # Determine the sheet name based on the criterion and model
         
         if self.criterion == 'limit': criterion_short = 'l'
         elif self.criterion == 'limit-stop': criterion_short = 'l-s'
@@ -121,33 +141,28 @@ class StockEvaluator:
         elif self.criterion == 'high_return': criterion_short = 'hr'
         
         sheet_name = f'l_{limit_value}_s_{stop_value}_{self.model_short}_{criterion_short}'
-
-        # Naming the output file based on the limit and stop values
         output_file = os.path.join(model_output_dir, f'sim_{self.model_short}_l{limit_value}_s{stop_value}.xlsx')
-        
-        # Save the simulation DataFrame to an Excel file
         simulation_df.to_excel(output_file, sheet_name=sheet_name, index=False)
         # print(f"Simulation results saved to {output_file}")
 
     def run_simulation(self, limit_stop_pair):
         """Run the simulation for a single limit-stop pair."""
         limit_value, stop_value, df = limit_stop_pair
+        df.dropna(inplace=True)
         if not self.check_required_targets(df):
             print(f"Skipping l{limit_value}_s{stop_value} due to missing required targets.")
             return
 
-        filtered_df = self.apply_criterion(df)
-        if not filtered_df.empty:
-            simulation_df, limit_value, stop_value = self.simulate_buying((limit_value, stop_value, filtered_df))
-            self.save_simulation(simulation_df, limit_value, stop_value)
+        df['pred-criterion-pass'] = self.determine_criterion_pass(df, "Pred")
+        df['gt-criterion-pass'] = self.determine_criterion_pass(df, "GT")
+        simulation_df, limit_value, stop_value = self.simulate_buying((limit_value, stop_value, df))
+        self.save_simulation(simulation_df, limit_value, stop_value)
 
     def run_evaluation(self):
         """Run the full evaluation and simulation process in parallel."""
         limit_stop_pairs = [(limit_value, stop_value, df) for (limit_value, stop_value), df in self.predictions.items()]
         
-        # Use multiprocessing Pool to parallelize the simulation process
         with Pool(cpu_count()) as pool:
-            # Add tqdm to the pool's map function for a progress bar
             list(tqdm(pool.imap(self.run_simulation, limit_stop_pairs), total=len(limit_stop_pairs), desc="Running Simulations"))
         print(f"Simulation results saved to {self.simulation_output_dir}")
 

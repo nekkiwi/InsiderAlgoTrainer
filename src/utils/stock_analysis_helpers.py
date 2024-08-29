@@ -21,6 +21,7 @@ def save_summary_statistics(return_df, output_dir, filtered=False):
     summary_stats = returns_data.describe(percentiles=[0.25, 0.5, 0.75]).T
     summary_stats = summary_stats[['min', '25%', '50%', 'mean', '75%', 'max']]*100
 
+    os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, 'stock_returns_summary_stats.xlsx')
     sheet_name = 'Filtered' if filtered else 'Original'
     with pd.ExcelWriter(output_path, mode='w') as writer:

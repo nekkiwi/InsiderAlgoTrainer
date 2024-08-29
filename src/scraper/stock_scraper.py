@@ -52,9 +52,27 @@ class StockDataScraper:
         self.stock_data_df = pd.DataFrame.from_dict(stock_data_dict, orient='index').reset_index()
         self.stock_data_df.columns = ['Ticker', 'Filing Date'] + [f'Day {i+1}' for i in range(self.max_days)]
 
-    def save_to_excel(self):
-        """Save the stock data and returns sheets to an Excel file."""
-        save_to_excel(self.stock_data_df, self.return_df, self.output_file)
+    def save_to_excel(stock_data_df, return_df, output_file, features_file):
+        """Save the stock data and returns sheets to an Excel file after filtering out tickers not in stock data."""
+        # Load the original features file
+        features_df = pd.read_excel(features_file)
+
+        # Filter the features DataFrame to keep only the tickers that have stock data
+        filtered_features_df = features_df[features_df['Ticker'].isin(stock_data_df['Ticker'])]
+
+        # Save the filtered features back to the features file
+        filtered_features_df.to_excel(features_file, index=False)
+        
+        # Save the stock data and returns to the final output file
+        stock_data_dir = os.path.dirname(output_file)
+        os.makedirs(stock_data_dir, exist_ok=True)
+        
+        with pd.ExcelWriter(output_file) as writer:
+            stock_data_df.to_excel(writer, sheet_name='Stock Data', index=False)
+            return_df.to_excel(writer, sheet_name='Returns', index=False)
+        
+        print(f"Data successfully saved to {output_file}.")
+
 
     def run(self):
         """Run the full process to create the stock data sheet and calculate returns."""
