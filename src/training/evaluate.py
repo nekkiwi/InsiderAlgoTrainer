@@ -43,11 +43,11 @@ class StockEvaluator:
             required_targets.append('GT_limit-occurred-first')
         if self.criterion in ['stop', 'limit-stop']:
             required_targets.append('GT_stop-occurred-first')
-        if self.criterion in ['spike_up', 'spike_up-down']:
+        if self.criterion in ['spike-up', 'spike-up-down']:
             required_targets.append('GT_spike-up')
-        if self.criterion in ['spike_up-down']:
+        if self.criterion in ['spike-up-down']:
             required_targets.append('GT_spike-down')
-        if self.criterion in ['pos_return', 'high_return']:
+        if self.criterion in ['pos-return', 'high-return']:
             required_targets.append('GT_return')
 
         return all(target in df.columns for target in required_targets)
@@ -60,13 +60,13 @@ class StockEvaluator:
             return (df[type+'_stop-occurred-first'] == 0).astype(int)
         elif self.criterion == 'limit-stop':
             return ((df[type+'_limit-occurred-first'] == 1) & (df[type+'_stop-occurred-first'] == 0)).astype(int)
-        elif self.criterion == 'spike_up':
+        elif self.criterion == 'spike-up':
             return (df[type+'_spike-up'] == 1).astype(int)
-        elif self.criterion == 'spike_up-down':
+        elif self.criterion == 'spike-up-down':
             return ((df[type+'_spike-up'] == 1) & (df[type+'_spike-down'] == 0)).astype(int)
-        elif self.criterion == 'pos_return':
+        elif self.criterion == 'pos-return':
             return (df[type+'_return'] > 0).astype(int)
-        elif self.criterion == 'high_return':
+        elif self.criterion == 'high-return':
             return (df[type+'_return'] > 0.04).astype(int)
         else:
             raise ValueError(f"Unknown criterion: {self.criterion}")
@@ -134,11 +134,11 @@ class StockEvaluator:
         if self.criterion == 'limit': criterion_short = 'l'
         elif self.criterion == 'limit-stop': criterion_short = 'l-s'
         elif self.criterion == 'stop': criterion_short = 's'
-        elif self.criterion == 'spike_up': criterion_short = 'su'
-        elif self.criterion == 'spike_down': criterion_short = 'sd'
-        elif self.criterion == 'spike_up-down': criterion_short = 'sud'
-        elif self.criterion == 'pos_return': criterion_short = 'pr'
-        elif self.criterion == 'high_return': criterion_short = 'hr'
+        elif self.criterion == 'spike-up': criterion_short = 'su'
+        elif self.criterion == 'spike-down': criterion_short = 'sd'
+        elif self.criterion == 'spike-up-down': criterion_short = 'sud'
+        elif self.criterion == 'pos-return': criterion_short = 'pr'
+        elif self.criterion == 'high-return': criterion_short = 'hr'
         
         sheet_name = f'l_{limit_value}_s_{stop_value}_{self.model_short}_{criterion_short}'
         output_file = os.path.join(model_output_dir, f'sim_{self.model_short}_l{limit_value}_s{stop_value}.xlsx')

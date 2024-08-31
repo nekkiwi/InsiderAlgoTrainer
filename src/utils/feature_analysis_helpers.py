@@ -58,7 +58,7 @@ def identify_feature_types(data):
                                  "Sector_Healthcare", "Sector_Industrials", "Sector_Real Estate", 
                                  "Sector_Technology", "Sector_Utilities"]
 
-    categorical_features = data[categorical_feature_names]
+    categorical_features = data[[feature for feature in categorical_feature_names if feature in data.columns]]
     continuous_feature_names = [feature for feature in data.columns if feature not in categorical_feature_names]
     continuous_features = data[continuous_feature_names]
 
@@ -103,9 +103,10 @@ def filter_low_variance_features(data, continuous_features, categorical_features
 def clip_continuous_features(data, continuous_features, lower=0.01, upper=0.99):
     """Clip continuous features at the specified lower and upper percentiles."""
     for column in continuous_features:
-        lower_bound = data[column].quantile(lower)
-        upper_bound = data[column].quantile(upper)
-        data[column] = data[column].clip(lower=lower_bound, upper=upper_bound)
+        if column in data.columns:
+            lower_bound = data[column].quantile(lower)
+            upper_bound = data[column].quantile(upper)
+            data[column] = data[column].clip(lower=lower_bound, upper=upper_bound)
     print("Clipped continuous features at the 1st and 99th percentiles.")
     return data
 

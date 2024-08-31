@@ -96,7 +96,7 @@ class ModelTrainer:
                 "stop": stop,
                 "data": pd.DataFrame({
                     "Ticker": self.features_df['Ticker'],
-                    "Filing Date": self.features_df['Filing Date'],
+                    "Filing Date": self.features_df['Filing Date'].dt.strftime('%d/%m/%Y %H:%M'),
                     f'GT_{self.target_name}': y,
                     f'Pred_{self.target_name}': predictions
                 })
@@ -134,7 +134,7 @@ class ModelTrainer:
                 "stop": stop,
                 "data": pd.DataFrame({
                     "Ticker": self.features_df['Ticker'],
-                    "Filing Date": self.features_df['Filing Date'],
+                    "Filing Date": self.features_df['Filing Date'].dt.strftime('%d/%m/%Y %H:%M'),
                     f'GT_{self.target_name}': y,
                     f'Pred_{self.target_name}': predictions
                 })
@@ -260,7 +260,7 @@ class ModelTrainer:
 
     def run(self, target_name, model_type="RandomForest"):
         """Run the full training process."""
-        self.binary_target = target_name not in ['Return at cashout', 'Days at cashout']
+        self.binary_target = target_name.replace(" ", "-").lower() not in ['return-at-cashout', 'days-at-cashout']
         self.model_type = model_type  # Set the model type
         self.load_data(target_name)
         self.train_model()

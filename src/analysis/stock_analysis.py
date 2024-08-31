@@ -90,32 +90,38 @@ class StockAnalysis:
         plt.savefig(output_path, dpi=300)
         plt.close()
 
-    def calculate_backtest_statistics(self, tickers_df, limit, stop, unfiltered_stats=None, all_stock_stats=None):
+    def calculate_backtest_statistics(self, tickers_df, limit, stop, all_stock_stats=None):
         """Calculate backtest statistics for the given tickers."""
-
-        # Align indices of tickers_df and self.return_df
-        aligned_index = tickers_df.set_index(['Ticker', 'Filing Date']).index
+        
+        # Set MultiIndex for both DataFrames
+        tickers_df = tickers_df.set_index(['Ticker', 'Filing Date'])
         self.return_df = self.return_df.set_index(['Ticker', 'Filing Date'])
 
+        # Align the DataFrames to ensure matching indices
+        aligned_return_df = self.return_df.loc[tickers_df.index.intersection(self.return_df.index)]
+        aligned_tickers_df = tickers_df.loc[aligned_return_df.index]
+
         # Filtered stats: where Criterion Pass is 1
-        pred_filtered_df = self.return_df.loc[aligned_index][tickers_df['Pred Criterion Pass'] == 1]
+        pred_bool_index = aligned_tickers_df['Pred Criterion Pass'] == 1
+        gt_bool_index = aligned_tickers_df['GT Criterion Pass'] == 1
+
+        pred_filtered_df = aligned_return_df.loc[pred_bool_index]
         pred_filtered_day_20_returns = pred_filtered_df['Day 20']
         
-        # Filtered stats: where GT Criterion Pass is 1
-        gt_filtered_df = self.return_df.loc[aligned_index][tickers_df['GT Criterion Pass'] == 1]
+        gt_filtered_df = aligned_return_df.loc[gt_bool_index]
         gt_filtered_day_20_returns = gt_filtered_df['Day 20']
 
         # Unfiltered stats: all tickers in the simulation
-        unfiltered_day_20_returns = self.return_df.loc[aligned_index]['Day 20']
+        unfiltered_day_20_returns = aligned_return_df['Day 20']
 
-        pred_filtered_tickers_df = tickers_df[tickers_df['Pred Criterion Pass'] == 1]
-        gt_filtered_tickers_df = tickers_df[tickers_df['GT Criterion Pass'] == 1]
-        
+        pred_filtered_tickers_df = aligned_tickers_df[pred_bool_index]
+        gt_filtered_tickers_df = aligned_tickers_df[gt_bool_index]
+
         # Confusion matrix components
-        tp = ((tickers_df['Pred Criterion Pass'] == 1) & (tickers_df['GT Criterion Pass'] == 1)).sum()
-        tn = ((tickers_df['Pred Criterion Pass'] == 0) & (tickers_df['GT Criterion Pass'] == 0)).sum()
-        fp = ((tickers_df['Pred Criterion Pass'] == 1) & (tickers_df['GT Criterion Pass'] == 0)).sum()
-        fn = ((tickers_df['Pred Criterion Pass'] == 0) & (tickers_df['GT Criterion Pass'] == 1)).sum()
+        tp = (pred_bool_index & gt_bool_index).sum()
+        tn = (~pred_bool_index & ~gt_bool_index).sum()
+        fp = (pred_bool_index & ~gt_bool_index).sum()
+        fn = (~pred_bool_index & gt_bool_index).sum()
 
         statistics = {
             "Limit": limit,
@@ -124,6 +130,10 @@ class StockAnalysis:
             "Criterion FP": fp,
             "Criterion FN": fn,
             "Criterion TN": tn,
+            "PPV": tp/(tp+fp),
+            "NPV": tn/(tn+fn),
+            "Accuracy": (tp+tn)/(tp+tn+fp+fn),
+            "MCC":(tp * tn - fp * fn) / np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)),
             "Pred Median Return on Day 20": pred_filtered_day_20_returns.median(),
             "Pred Mean Return on Day 20": pred_filtered_day_20_returns.mean(),
             "Pred # Limit Filtered": (pred_filtered_tickers_df['Selling Day'] == pred_filtered_tickers_df['Limit Day']).sum(),
@@ -155,13 +165,6 @@ class StockAnalysis:
             "All-Raw Mean Return on Day 20": all_stock_stats['mean'] if all_stock_stats else np.nan,
         }
         return statistics
-    
-    def calculate_unfiltered_stats(self):
-        """Calculate mean and median returns at day 20 for all tickers without any filtering."""
-        return {
-            "mean": self.return_df['Day 20'].mean(),
-            "median": self.return_df['Day 20'].median()
-        }
 
     def calculate_all_stock_stats(self):
         """Calculate mean and median returns at day 20 for all stock history."""
@@ -215,17 +218,18 @@ class StockAnalysis:
         self.plot_combined()
 
     def process_simulation_file(self, args):
-        file_name, unfiltered_stats, all_stock_stats = args
+        file_name, all_stock_stats = args
         tickers_file = os.path.join(self.simulations_dir, self.model_name, file_name)
         self.run(tickers_file)
         limit, stop = self.extract_limit_stop_from_filename(file_name)
         tickers_df = pd.read_excel(tickers_file)
-        return self.calculate_backtest_statistics(tickers_df, limit, stop, unfiltered_stats, all_stock_stats)
+        return self.calculate_backtest_statistics(tickers_df, limit, stop, all_stock_stats)
 
     def run_all_simulations(self, model_name, criterion):
         """Run stock return analysis for all simulations of a specific model and generate a backtest report."""
         self.model_name = model_name.replace(' ','-').lower()
         self.load_data()
+        self.all_summary_stats = pd.read_excel(os.path.join(self.base_output_dir, 'all', 'stock_returns_summary_stats.xlsx'), index_col=0)
         if self.return_df is None:
             print("No data loaded. Exiting.")
             return
@@ -235,13 +239,12 @@ class StockAnalysis:
             print(f"No simulations found for model: {self.model_name}")
             return
 
-        unfiltered_stats = self.calculate_unfiltered_stats()
         all_stock_stats = self.calculate_all_stock_stats()
 
         simulation_files = [file for file in os.listdir(model_dir) if file.endswith('.xlsx')]
 
         # Prepare arguments for the pool
-        pool_args = [(file_name, unfiltered_stats, all_stock_stats) for file_name in simulation_files]
+        pool_args = [(file_name, all_stock_stats) for file_name in simulation_files]
 
         # Use multiprocessing Pool to parallelize the simulation process
         with Pool(cpu_count()) as pool:

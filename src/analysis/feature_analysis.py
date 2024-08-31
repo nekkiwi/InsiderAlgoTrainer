@@ -57,7 +57,7 @@ class FeatureAnalyzer:
 
         self.calculate_and_plot_correlations(output_dir)
         self.drop_highly_correlated_features()
-        self.save_feature_data('final/features_final.xlsx')
+        self.save_feature_data('interim/5_features_full_cleaned.xlsx')
 
 if __name__ == "__main__":
     analyzer = FeatureAnalyzer()

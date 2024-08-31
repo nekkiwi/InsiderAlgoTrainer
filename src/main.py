@@ -16,8 +16,17 @@ def scrape_data(num_months):
     scraper.run(num_months)
     print("Feature Scraper completed.\n")
     
-    # # Ensure the scraper has completed before moving on
-    # sys.stdout.flush()
+    # Ensure the scraper has completed before moving on
+    sys.stdout.flush()
+    
+    # Initialize and run the Feature Analyzer
+    print("Starting Feature Analyzer...")
+    analyzer = FeatureAnalyzer()
+    analyzer.run_analysis()
+    print("Feature Analyzer completed.\n")
+    
+    # Ensure the scraper has completed before moving on
+    sys.stdout.flush()
     
     # TODO: wait until feature_final is saved and then move on 
     # Initialize and run the Stock Scraper
@@ -29,16 +38,7 @@ def scrape_data(num_months):
     # Ensure the scraper has completed before moving on
     sys.stdout.flush()
     
-def run_analysis():
-    # Initialize and run the Feature Analyzer
-    print("Starting Feature Analyzer...")
-    analyzer = FeatureAnalyzer()
-    analyzer.run_analysis()
-    print("Feature Analyzer completed.\n")
-    
-    # Ensure the scraper has completed before moving on
-    sys.stdout.flush()
-    
+def run_analysis():    
     # Initialize and run the Stock Analyzer
     print("Starting Stock Analyzer...")
     analyzer = StockAnalysis()
@@ -98,23 +98,31 @@ def evaluate_model(criterion, model_type):
     sys.stdout.flush()
     
 def clear_output(model_type):
-    def remove_directory_content(model_type, directory):
+    def remove_directory_content(directory, type):
         # Create a subdirectory for the model under the predictions directory
         data_dir = os.path.join(os.path.dirname(__file__), '../data')
         predictions_dir = os.path.join(data_dir, directory)
+        
+        if type == 'file':
+            # Clear the directory before repopulating it
+            files = os.listdir(predictions_dir)
+            for file in files:
+                file_path = os.path.join(predictions_dir, file)
+                os.remove(file_path)
+                print(f'Removed file at {file_path}.')
                 
-        # Clear the directory before repopulating it
-        dirs = os.listdir(predictions_dir)
-        for dir in dirs:
-            dir_path = os.path.join(predictions_dir, dir)
-            os.rmdir(dir_path)
-            print(f'Removed dir at {dir_path}.')
-                
-    remove_directory_content(model_type, 'training/predictions/'+model_type.replace(" ", "-").lower())
-    remove_directory_content(model_type, 'training/simulation/'+model_type.replace(" ", "-").lower())
+        if type == 'dir':
+            for root, dirs, files in os.walk(predictions_dir, topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+                    
+    remove_directory_content('training/predictions/'+model_type.replace(" ", "-").lower(), 'file')
+    remove_directory_content('training/simulation/'+model_type.replace(" ", "-").lower(), 'file')
     
     # Clear the stock analysis directory but run the 'all' again
-    remove_directory_content(model_type, 'output/stock_analysis')
+    remove_directory_content('output/stock_analysis', 'dir')
     
     # Initialize and run the Stock Analyzer
     print("Starting Stock Analyzer...")
@@ -128,15 +136,15 @@ def clear_output(model_type):
 def main():    
     ########################################################################
     # Scrape Features and Stock Data for num_months
-    num_months=36
+    num_months=72
     
     # scrape_data(num_months)
     # run_analysis()
     
     ########################################################################
     # Scrape Targets and select features for each target
-    limit_array = [ 0.04, 0.05, 0.06, 0.08, 0.1, 0.12]
-    stop_array  = [-0.06, -0.05, -0.04, -0.03, -0.02]
+    limit_array = [ 0.02, 0.04,  0.05, 0.06,  0.07, 0.08,  0.09, 0.1,  0.12]
+    stop_array  = [-0.16,-0.14,-0.12, -0.1, -0.09, -0.08, -0.07, -0.06, -0.05, -0.04, -0.02]
     
     # scrape_targets(limit_array, stop_array)
     # select_features()
@@ -145,12 +153,19 @@ def main():
     # Train models to predict given targets using given models and evaluate
     # Models: [RandomForest, NaivesBayes, RBF SVM, Gaussian Process, Neural Net]
     # Targets: [spike-up, spike-down, limit-occurred-first, stop-occurred-first, return-at-cashout, days-at-cashout]
+        
+    model_types = ["Neural Net"]#, "RandomForest", "NaivesBayes", "RBF SVM", "Gaussian Process", "Neural Net"]
     
-    clear_output("RandomForest")
-    for model_type in ["RandomForest"]:
+    # Limit-Stop Criterion
+    # for model_type in model_types:
+    #     clear_output(model_type)
+        
+    for model_type in model_types:
         train_model('limit-occurred-first', model_type)
+        evaluate_model('limit', model_type)
         train_model('stop-occurred-first', model_type)
+        evaluate_model('stop', model_type)
         evaluate_model('limit-stop', model_type)
-
+        
 if __name__ == "__main__":
     main()

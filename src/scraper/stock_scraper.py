@@ -12,7 +12,8 @@ from utils.stock_scraper_helpers import load_features, download_data_wrapper, cr
 class StockDataScraper:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        self.features_file = os.path.join(data_dir, 'final/features_final.xlsx')
+        self.features_file = os.path.join(data_dir, 'interim/5_features_full_cleaned.xlsx')
+        self.features_out_file = os.path.join(data_dir, 'final/features_final.xlsx')
         self.output_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
         self.ticker_filing_dates = None
         self.stock_data_df = None
@@ -52,27 +53,40 @@ class StockDataScraper:
         self.stock_data_df = pd.DataFrame.from_dict(stock_data_dict, orient='index').reset_index()
         self.stock_data_df.columns = ['Ticker', 'Filing Date'] + [f'Day {i+1}' for i in range(self.max_days)]
 
-    def save_to_excel(stock_data_df, return_df, output_file, features_file):
+    def save_to_excel(self):
         """Save the stock data and returns sheets to an Excel file after filtering out tickers not in stock data."""
         # Load the original features file
-        features_df = pd.read_excel(features_file)
+        features_df = pd.read_excel(self.features_file)
 
-        # Filter the features DataFrame to keep only the tickers that have stock data
-        filtered_features_df = features_df[features_df['Ticker'].isin(stock_data_df['Ticker'])]
+        # Ensure both DataFrames have matching indices based on Ticker and Filing Date
+        self.stock_data_df['Filing Date'] = pd.to_datetime(self.stock_data_df['Filing Date'])
+        features_df['Filing Date'] = pd.to_datetime(features_df['Filing Date'])
 
-        # Save the filtered features back to the features file
-        filtered_features_df.to_excel(features_file, index=False)
+        # Set the index for both DataFrames to Ticker and Filing Date for proper alignment
+        stock_indexed_df = self.stock_data_df.set_index(['Ticker', 'Filing Date'])
+        features_indexed_df = features_df.set_index(['Ticker', 'Filing Date'])
+
+        # Filter the features DataFrame to keep only the tickers and filing dates that have stock data
+        filtered_features_df = features_indexed_df.loc[features_indexed_df.index.intersection(stock_indexed_df.index)]
+
+        # Reset index to save to Excel
+        filtered_features_df.reset_index(inplace=True)
+        
+        # Save the filtered features to the final features file
+        filtered_features_df.to_excel(self.features_out_file, index=False)
         
         # Save the stock data and returns to the final output file
-        stock_data_dir = os.path.dirname(output_file)
+        stock_data_dir = os.path.dirname(self.output_file)
         os.makedirs(stock_data_dir, exist_ok=True)
         
-        with pd.ExcelWriter(output_file) as writer:
-            stock_data_df.to_excel(writer, sheet_name='Stock Data', index=False)
-            return_df.to_excel(writer, sheet_name='Returns', index=False)
+        self.return_df['Filing Date'] = self.return_df['Filing Date'].dt.strftime('%d/%m/%Y %H:%M')
         
-        print(f"Data successfully saved to {output_file}.")
-
+        with pd.ExcelWriter(self.output_file) as writer:
+            self.stock_data_df.to_excel(writer, sheet_name='Stock Data', index=False)
+            self.return_df.to_excel(writer, sheet_name='Returns', index=False)
+        
+        print(f"Filtered features saved to {self.features_out_file}.")
+        print(f"Stock data and returns saved to {self.output_file}.")
 
     def run(self):
         """Run the full process to create the stock data sheet and calculate returns."""
