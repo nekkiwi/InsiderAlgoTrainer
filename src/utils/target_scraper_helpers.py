@@ -12,7 +12,8 @@ def process_targets(stock_data, limit_array, stop_array):
                 'spike-down': 0,
                 'limit-occurred-first': 0,
                 'stop-occurred-first': 0,
-                'return-at-cashout': 0.0,
+                'pos-return': 0.0,
+                'high-return': 0.0,
                 'days-at-cashout': 0,
             }
 
@@ -29,19 +30,22 @@ def process_targets(stock_data, limit_array, stop_array):
                 if price_change >= limit:
                     targets[target_key]['limit-occurred-first'] = 1
                     targets[target_key]['days-at-cashout'] = i
-                    targets[target_key]['return-at-cashout'] = price_change
+                    targets[target_key]['pos-return'] = int(price_change > 0)
+                    targets[target_key]['high-return'] = int(price_change > 0.02)
                     break
 
                 if price_change <= stop:
                     targets[target_key]['stop-occurred-first'] = 1
                     targets[target_key]['days-at-cashout'] = i
-                    targets[target_key]['return-at-cashout'] = price_change
+                    targets[target_key]['pos-return'] = int(price_change > 0)
+                    targets[target_key]['high-return'] = int(price_change > 0.02)
                     break
 
             # If no limit or stop was reached
             if targets[target_key]['days-at-cashout'] == 0:
                 targets[target_key]['days-at-cashout'] = len(stock_data) - 1
-                targets[target_key]['return-at-cashout'] = price_change
+                targets[target_key]['pos-return'] = int(price_change > 0)
+                targets[target_key]['high-return'] = int(price_change > 0.02)
 
     return targets
 

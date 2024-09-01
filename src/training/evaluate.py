@@ -47,8 +47,10 @@ class StockEvaluator:
             required_targets.append('GT_spike-up')
         if self.criterion in ['spike-up-down']:
             required_targets.append('GT_spike-down')
-        if self.criterion in ['pos-return', 'high-return']:
-            required_targets.append('GT_return')
+        if self.criterion in ['pos-return']:
+            required_targets.append('GT_pos-return')
+        if self.criterion in ['high-return']:
+            required_targets.append('GT_high-return')
 
         return all(target in df.columns for target in required_targets)
 
@@ -65,9 +67,9 @@ class StockEvaluator:
         elif self.criterion == 'spike-up-down':
             return ((df[type+'_spike-up'] == 1) & (df[type+'_spike-down'] == 0)).astype(int)
         elif self.criterion == 'pos-return':
-            return (df[type+'_return'] > 0).astype(int)
+            return (df[type+'_pos-return'] > 0).astype(int)
         elif self.criterion == 'high-return':
-            return (df[type+'_return'] > 0.04).astype(int)
+            return (df[type+'_high-return'] > 0.04).astype(int)
         else:
             raise ValueError(f"Unknown criterion: {self.criterion}")
 

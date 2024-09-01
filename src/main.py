@@ -146,26 +146,23 @@ def main():
     limit_array = [ 0.02, 0.04,  0.05, 0.06,  0.07, 0.08,  0.09, 0.1,  0.12]
     stop_array  = [-0.16,-0.14,-0.12, -0.1, -0.09, -0.08, -0.07, -0.06, -0.05, -0.04, -0.02]
     
-    # scrape_targets(limit_array, stop_array)
-    # select_features()
+    scrape_targets(limit_array, stop_array)
+    select_features()
     
     ########################################################################
     # Train models to predict given targets using given models and evaluate
     # Models: [RandomForest, NaivesBayes, RBF SVM, Gaussian Process, Neural Net]
     # Targets: [spike-up, spike-down, limit-occurred-first, stop-occurred-first, return-at-cashout, days-at-cashout]
         
-    model_types = ["Neural Net"]#, "RandomForest", "NaivesBayes", "RBF SVM", "Gaussian Process", "Neural Net"]
+    model_types = ["RandomForest"]#, "RandomForest", "NaivesBayes", "RBF SVM", "Gaussian Process", "Neural Net"]
     
     # Limit-Stop Criterion
-    # for model_type in model_types:
-    #     clear_output(model_type)
+    for model_type in model_types:
+        clear_output(model_type)
         
     for model_type in model_types:
-        train_model('limit-occurred-first', model_type)
-        evaluate_model('limit', model_type)
-        train_model('stop-occurred-first', model_type)
-        evaluate_model('stop', model_type)
-        evaluate_model('limit-stop', model_type)
+        train_model('pos-return', model_type)
+        evaluate_model('pos-return', model_type)
         
 if __name__ == "__main__":
     main()
