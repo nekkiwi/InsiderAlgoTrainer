@@ -7,9 +7,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.feature_selector_helpers import select_features
+from .utils.feature_selector_helpers import select_features
 
 class FeatureSelector:
     def __init__(self):

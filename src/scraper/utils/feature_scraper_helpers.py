@@ -1,10 +1,62 @@
 import pandas as pd
-from utils.date_helpers import get_next_market_open
-from datetime import datetime
+from datetime import time, datetime
 import requests
 from bs4 import BeautifulSoup
 from io import StringIO
 from functools import partial
+
+def log_missing_values(df, step_name):
+    """
+    Logs the number of missing values per column in the dataframe, sorted by most missing values first.
+    Also logs the total number of rows that have at least one missing value.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to check for missing values.
+        step_name (str): A string describing the step at which this function is called.
+    """
+    # Count missing values for each column
+    missing_counts = df.isnull().sum()
+    
+    # Total number of rows with at least one missing value
+    total_rows_with_missing = df.isnull().any(axis=1).sum()
+    
+    # Only keep columns with missing values and sort by missing count (descending)
+    missing_counts = missing_counts[missing_counts > 0].sort_values(ascending=False)
+    
+    if total_rows_with_missing > 0:
+        print(f"\n[Missing Values Report after {step_name}]")
+        print(f"Total rows with at least one missing value: {total_rows_with_missing}")
+        
+        # Print the missing value count for each column, sorted
+        for column, count in missing_counts.items():
+            print(f"Column '{column:<40}': {count:>3} missing values")
+    else:
+        print(f"\n[No Missing Values after {step_name}]")
+
+
+
+
+def get_next_market_open(dt):
+    # Assume market hours are 9:00 AM to 5:00 PM
+    market_open = time(9, 0)
+    market_close = time(17, 0)
+    
+    # If it's before 9:00 AM, move to 9:00 AM today
+    if dt.time() < market_open:
+        return dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    # If it's after 5:00 PM, move to 9:00 AM the next business day
+    if dt.time() >= market_close:
+        dt = dt + pd.tseries.offsets.BDay()
+        return dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    # Round up to the next full or half hour
+    minutes = dt.minute
+    if minutes > 0 and minutes <= 30:
+        return dt.replace(minute=30, second=0, microsecond=0)
+    else:
+        dt += pd.tseries.offsets.Hour()
+        return dt.replace(minute=0, second=0, microsecond=0)
 
 def get_html(url):
     response = requests.get(url)

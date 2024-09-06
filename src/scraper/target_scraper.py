@@ -4,9 +4,7 @@ from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 import sys
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.target_scraper_helpers import process_targets, calculate_target_distribution
+from .utils.target_scraper_helpers import process_targets, calculate_target_distribution
 
 class TargetScraper:
     def __init__(self):

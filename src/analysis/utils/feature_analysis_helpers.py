@@ -7,7 +7,7 @@ from sklearn.feature_selection import VarianceThreshold
 
 def load_feature_data(file_path):
     """Load the feature data from an Excel file and extract Ticker and Filing Date."""
-    data_dir = os.path.join(os.path.dirname(__file__), '../../data')
+    data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
     file_path = os.path.join(data_dir, file_path)
     if os.path.exists(file_path):
         try:
@@ -28,7 +28,7 @@ def load_feature_data(file_path):
 
 def save_feature_data(data, ticker_filing_dates, file_path):
     """Save the processed feature data along with Ticker and Filing Date to an Excel file."""
-    data_dir = os.path.join(os.path.dirname(__file__), '../../data')
+    data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
     file_path = os.path.join(data_dir, file_path)
     # Ensure 'Filing Date' is treated as datetime
     ticker_filing_dates['Filing Date'] = pd.to_datetime(ticker_filing_dates['Filing Date'], dayfirst=True, errors='coerce')

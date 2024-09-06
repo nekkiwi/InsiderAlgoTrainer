@@ -8,9 +8,7 @@ from matplotlib import pyplot as plt
 from openpyxl import load_workbook
 import sys
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.stock_analysis_helpers import filter_jumps, save_summary_statistics
+from .utils.stock_analysis_helpers import filter_jumps, save_summary_statistics
 
 class StockAnalysis:
     def __init__(self):

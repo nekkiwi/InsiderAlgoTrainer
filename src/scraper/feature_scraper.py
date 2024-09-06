@@ -8,15 +8,12 @@ import yfinance as yf
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import numpy as np
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
+from pandas.tseries.offsets import BDay
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from utils.feature_scraper_helpers import *
-from utils.technical_indicators_helpers import *
-from utils.financial_ratios_helpers import *
+from .utils.feature_scraper_helpers import *
+from .utils.technical_indicators_helpers import *
+from .utils.financial_ratios_helpers import *
 
 class FeatureScraper:
     def __init__(self):
@@ -57,56 +54,104 @@ class FeatureScraper:
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
-        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(20)
+        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
         
+        # Clean numeric columns
         self.data = clean_numeric_columns(self.data)
         
         # Drop rows where ΔOwn is negative
         self.data = self.data[self.data['ΔOwn'] >= 0]
         
+        # Parse titles
         self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)
+        
+        # Show the number of unique Ticker - Filing Date combinations
+        unique_combinations = self.data[['Ticker', 'Filing Date']].drop_duplicates().shape[0]
+        print(f"\nNumber of unique Ticker - Filing Date combinations before aggregation: {unique_combinations}")
         
         # Group by Ticker and Filing Date, then aggregate
         self.data = aggregate_group(self.data)
         
+        # Format the date column and drop any remaining rows with missing values
         self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
         self.data.dropna(inplace=True)
+        
         print(f"{len(self.data)} entries remained after cleaning and aggregating!")
+
         
     def add_technical_indicators(self):
         rows = self.data.to_dict('records')
+        
+        # Apply technical indicators
         with Pool(cpu_count()) as pool:
             processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows)))
+        
         self.data = pd.DataFrame(filter(None, processed_rows))
+        
+        # Replace infinite values and drop rows with missing values
         self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
+        
+        # Log missing values before dropping NaNs
+        log_missing_values(self.data, "before dropping rows after adding technical indicators")
+        
+        # Drop rows with missing values
         self.data.dropna(inplace=True)
+        
+        log_missing_values(self.data, "after dropping rows due to missing technical indicators")
+        
         print(f"{len(self.data)} entries remained after adding technical indicators!")
+
 
     def add_financial_ratios(self):
         rows = self.data.to_dict('records')
+        
+        # Apply financial ratios
         with Pool(cpu_count()) as pool:
             processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows)))
+        
         self.data = pd.DataFrame(filter(None, processed_rows))
         
+        # Add sector dummies and drop the Sector column
         sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
         self.data = pd.concat([self.data, sector_dummies], axis=1)
         self.data.drop(columns=['Sector'], inplace=True)
         
+        # Log missing values before dropping NaNs
+        log_missing_values(self.data, "before dropping rows after adding financial ratios")
+        
+        # Drop rows with missing values
         self.data.dropna(inplace=True)
+        
+        log_missing_values(self.data, "after dropping rows due to missing financial ratios")
+        
         print(f"{len(self.data)} entries remained after adding financial ratios!")
+
 
     def add_insider_transactions(self):
         rows = self.data.to_dict('records')
+        
+        # Fetch insider transactions
         with Pool(cpu_count()) as pool:
             processed_rows = list(tqdm(pool.imap(get_recent_trades, [row['Ticker'] for row in rows]), total=len(rows)))
+        
         for row, trade_data in zip(rows, processed_rows):
             if trade_data:
                 row.update(trade_data)
+        
         self.data = pd.DataFrame(rows)
+        
+        # Log missing values before dropping NaNs
+        log_missing_values(self.data, "before dropping rows after adding insider transactions")
+        
+        # Drop rows with missing values
         self.data.dropna(inplace=True)
+        
+        log_missing_values(self.data, "after dropping rows due to missing insider transactions")
+        
         print(f"{len(self.data)} entries remained after adding insider transactions!")
+
         
     def save_feature_distribution(self, output_file='feature_distribution.xlsx'):
         # Define the quantiles and statistics to be calculated
