@@ -1,48 +1,14 @@
 import sys
 import os
+import pandas as pd
 from src.scraper.target_scraper import TargetScraper
 from src.scraper.feature_scraper import FeatureScraper
 from src.scraper.stock_scraper import StockDataScraper
-from src.analysis.feature_selector import FeatureSelector
-from src.analysis.feature_analysis import FeatureAnalyzer
-from src.analysis.stock_analysis import StockAnalysis
+from src.training.feature_selector import FeatureSelector
+from src.data_exploration.feature_analysis import FeatureAnalyzer
+from src.data_exploration.stock_analysis import StockAnalysis
 from src.training.train import ModelTrainer
-from src.training.evaluate import StockEvaluator
-
-def scrape_features(num_months):    
-    scraper = FeatureScraper()
-    scraper.run(num_months)
-    sys.stdout.flush()
-    
-def run_feature_analysis():
-    analyzer = FeatureAnalyzer()
-    analyzer.run_analysis()
-    sys.stdout.flush()
-    
-def scrape_stockdata():
-    scraper = StockDataScraper()
-    scraper.run()
-    sys.stdout.flush()
-    
-def run_analysis():    
-    analyzer = StockAnalysis()
-    analyzer.run()
-    sys.stdout.flush()
-    
-def scrape_targets(limit_array, stop_array):
-    scraper = TargetScraper()
-    scraper.run(limit_array, stop_array)
-    sys.stdout.flush()
-    
-def select_features():
-    selector = FeatureSelector()
-    selector.run()
-    sys.stdout.flush()
-    
-def train_model(target_name, model_type):
-    trainer = ModelTrainer()
-    trainer.run(target_name, model_type)
-    sys.stdout.flush()
+from src.analysis.evaluate import StockEvaluator
     
     
 def evaluate_model(criterion, model_type):
@@ -87,28 +53,41 @@ def clear_output(model_type):
 
 
 def main():    
-    num_months=1
+    feature_scraper = FeatureScraper()
+    feature_analyzer = FeatureAnalyzer()
+    stock_scraper = StockDataScraper()
+    stock_analyzer = StockAnalysis()
+    target_scraper = TargetScraper()
+    feature_selector = FeatureSelector()
+    trainer = ModelTrainer()
+    features_df = None
+    return_df = None
+    alpha_df = None
+    targets_df = None
+    features_df_preprocessed = None
+    features_df_filtered = None
+    selected_features = None
     
-    scrape_features(num_months)
-    run_feature_analysis()
-    scrape_stockdata()
-    # run_analysis()
+    # num_months=1
+    # features_df = feature_scraper.run(num_months)
+    # features_df_preprocessed = feature_analyzer.run(features_df)
+    # features_df_filtered, return_df, alpha_df = stock_scraper.run(features_df_preprocessed)
+    # stock_analyzer.run(return_df, alpha_df)
     
-    # limit_array = [ 0.02, 0.04,  0.05, 0.06,  0.07, 0.08,  0.09, 0.1,  0.12]
-    # stop_array  = [-0.16,-0.14,-0.12, -0.1, -0.09, -0.08, -0.07, -0.06, -0.05, -0.04, -0.02]
+    # limit_array = [ 0.02, 0.08, 0.12]
+    # stop_array  = [-0.16,-0.08,-0.02]
+    # high_threshold = 0.04
     
-    # scrape_targets(limit_array, stop_array)
-    # select_features()
+    # targets_df = target_scraper.run(return_df, alpha_df, limit_array, stop_array, high_threshold)
     
-    # model_types = ["RandomForest"]
+    # p_threshold=0.05
+    # selected_features = feature_selector.run(features_df_filtered, targets_df, p_threshold)
     
-    # # Limit-Stop Criterion
-    # for model_type in model_types:
-    #     clear_output(model_type)
-        
-    # for model_type in model_types:
-    #     train_model('pos-return', model_type)
-    #     evaluate_model('pos-return', model_type)
+    models = ["RandomForest"]
+    targets = ["final_alpha"] 
+    
+    for target, model in zip(targets, models):
+        trainer.run(target, model, selected_features, features_df, targets_df)
         
 if __name__ == "__main__":
     main()

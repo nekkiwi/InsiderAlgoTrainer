@@ -1,76 +1,97 @@
 import pandas as pd
 
-def process_targets(stock_data, limit_array, stop_array):
-    """Calculate the targets for the given ticker based on the stock data."""
-    targets = {}
+def process_ticker_targets(ticker_info, return_df, alpha_df, limit_array, stop_array, high_threshold):
+    """Process return and alpha data for a specific ticker and filing date."""
+    ticker, filing_date = ticker_info
 
+    # Get stock data for the given ticker and filing date
+    stock_return_data = return_df[
+        (return_df['Ticker'] == ticker) & 
+        (return_df['Filing Date'] == filing_date)
+    ].iloc[:, 2:].squeeze()
+
+    stock_alpha_data = alpha_df[
+        (alpha_df['Ticker'] == ticker) & 
+        (alpha_df['Filing Date'] == filing_date)
+    ].iloc[:, 2:].squeeze()
+
+    if not stock_return_data.empty and not stock_alpha_data.empty:
+        return (ticker, filing_date), process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array, high_threshold)
+    
+    return (ticker, filing_date), None
+
+def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array, high_threshold):
+    """Calculate targets for both return and alpha data using specified limit and stop arrays."""
+    targets = {}
     for limit in limit_array:
         for stop in stop_array:
             target_key = (limit, stop)
             targets[target_key] = {
-                'spike-up': 0,
-                'spike-down': 0,
-                'limit-occurred-first': 0,
-                'stop-occurred-first': 0,
-                'pos-return': 0.0,
-                'high-return': 0.0,
-                'days-at-cashout': 0,
+                'return_limit_sell': 0,
+                'return_stop_sell': 0,
+                'alpha_limit_sell': 0,
+                'alpha_stop_sell': 0,
+                'pos_return': 0,
+                'high_return': 0,
+                'pos_alpha': 0,
+                'high_alpha': 0,
+                'final_return': stock_return_data.iloc[-1],
+                'final_alpha': stock_alpha_data.iloc[-1],
             }
 
-            for i in range(1, len(stock_data)):
-                price_change = (stock_data.iloc[i] - stock_data.iloc[0]) / stock_data.iloc[0]
+            for i in range(1, len(stock_return_data)):
+                return_price_change = stock_return_data.iloc[i]
+                alpha_price_change = stock_alpha_data.iloc[i]
 
-                # Spike detection
-                if (stock_data.iloc[i] - stock_data.iloc[i-1]) / stock_data.iloc[i-1] > 0.1:
-                    targets[target_key]['spike-up'] = 1
-                if (stock_data.iloc[i-1] - stock_data.iloc[i]) / stock_data.iloc[i-1] > 0.1:
-                    targets[target_key]['spike-down'] = 1
-
-                # Check for limit/stop
-                if price_change >= limit:
-                    targets[target_key]['limit-occurred-first'] = 1
-                    targets[target_key]['days-at-cashout'] = i
-                    targets[target_key]['pos-return'] = int(price_change > 0)
-                    targets[target_key]['high-return'] = int(price_change > 0.02)
+                # Check for return limit/stop
+                if return_price_change >= limit:
+                    targets[target_key]['return_limit_sell'] = 1
+                    break
+                if return_price_change <= stop:
+                    targets[target_key]['return_stop_sell'] = 1
                     break
 
-                if price_change <= stop:
-                    targets[target_key]['stop-occurred-first'] = 1
-                    targets[target_key]['days-at-cashout'] = i
-                    targets[target_key]['pos-return'] = int(price_change > 0)
-                    targets[target_key]['high-return'] = int(price_change > 0.02)
+                # Check for alpha limit/stop
+                if alpha_price_change >= limit:
+                    targets[target_key]['alpha_limit_sell'] = 1
+                    break
+                if alpha_price_change <= stop:
+                    targets[target_key]['alpha_stop_sell'] = 1
                     break
 
-            # If no limit or stop was reached
-            if targets[target_key]['days-at-cashout'] == 0:
-                targets[target_key]['days-at-cashout'] = len(stock_data) - 1
-                targets[target_key]['pos-return'] = int(price_change > 0)
-                targets[target_key]['high-return'] = int(price_change > 0.02)
+            # Calculate the final targets (after going through all the days)
+            targets[target_key]['pos_return'] = int(stock_return_data.iloc[-1] > 0)
+            targets[target_key]['high_return'] = int(stock_return_data.iloc[-1] > high_threshold)
+            targets[target_key]['pos_alpha'] = int(stock_alpha_data.iloc[-1] > 0)
+            targets[target_key]['high_alpha'] = int(stock_alpha_data.iloc[-1] > high_threshold)
 
     return targets
 
-def calculate_target_distribution(results):
+
+def calculate_target_distribution(results, dist_out_file):
     """Calculate and return the distribution of each target for each limit-stop combination."""
     distribution_data = []
 
     # Iterate over the first entry to get all the metric names
-    first_key = next(iter(results))
-    first_data = results[first_key]
+    first_key = next(iter(results))  # Get the first Ticker and Filing Date tuple
+    first_data = results[first_key]  # This will be the dictionary of limit-stop keys to their metrics
     
-    for limit_stop_key in first_data.keys():
-        for metric in first_data[limit_stop_key].keys():
+    for limit_stop_key in first_data.keys():  # Iterate over the limit-stop combinations
+        limit, stop = limit_stop_key  # Extract limit and stop values
+        for metric in first_data[limit_stop_key].keys():  # Iterate over each target metric (e.g., 'return_limit_sell')
             metric_values = []
-            for target_data in results.values():
+            for target_data in results.values():  # Collect values for the current metric across all results
                 metric_value = target_data[limit_stop_key].get(metric, None)
                 if metric_value is not None:
                     metric_values.append(metric_value)
-            
+
             if metric_values:
                 metric_series = pd.Series(metric_values)
                 distribution_metrics = metric_series.describe(percentiles=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
 
                 distribution_data.append({
-                    'Limit-Stop': limit_stop_key,
+                    'Limit': limit,
+                    'Stop': stop,
                     'Target': metric.replace(" ", "-").lower(),
                     'min': distribution_metrics['min'],
                     '1%': distribution_metrics['1%'],
@@ -86,5 +107,66 @@ def calculate_target_distribution(results):
                     'mean': distribution_metrics['mean']
                 })
 
-    return pd.DataFrame(distribution_data)
+    distribution_df = pd.DataFrame(distribution_data)
+    distribution_df.to_excel(dist_out_file, index=False)
+    print(f"- Target distribution successfully saved to {dist_out_file}.")
+
+def save_targets_to_excel(results, limit_array, stop_array, output_file):
+    """Save targets to an Excel file with each target in its own sheet."""
+    try:
+        # Extract the first set of results to get the target keys
+        first_ticker = next(iter(results))
+        target_keys = list(results[first_ticker][(limit_array[0], stop_array[0])].keys())
+
+        # Identify the targets that are independent of limit/stop
+        single_column_targets = ['pos_return', 'pos_alpha', 'high_return', 'high_alpha', 'final_return', 'final_alpha']
+
+        # Prepare a DataFrame to store these independent targets
+        static_target_df = pd.DataFrame({
+            'Ticker': [ticker_filing_date[0] for ticker_filing_date in results.keys()],
+            'Filing Date': [ticker_filing_date[1] for ticker_filing_date in results.keys()],
+        })
+
+        # Add columns for the independent targets
+        for target in single_column_targets:
+            static_target_df[target] = [
+                results[ticker_filing_date][(limit_array[0], stop_array[0])].get(target, None)
+                for ticker_filing_date in results.keys()
+            ]
+
+        # Save static targets to individual sheets
+        with pd.ExcelWriter(output_file) as writer:
+            for target in single_column_targets:
+                # Create a DataFrame for the target
+                target_df = static_target_df[['Ticker', 'Filing Date', target]].copy()
+                # Save each target as its own sheet
+                target_df.to_excel(writer, sheet_name=target, index=False)
+
+            # Loop over each limit/stop dependent target and save as a separate sheet
+            dependent_target_keys = [key for key in target_keys if key not in single_column_targets]
+            for target_key in dependent_target_keys:
+                # Prepare a DataFrame for this target
+                target_df = pd.DataFrame({
+                    'Ticker': [ticker_filing_date[0] for ticker_filing_date in results.keys()],
+                    'Filing Date': [ticker_filing_date[1] for ticker_filing_date in results.keys()]
+                })
+
+                # Add limit/stop columns for this target
+                for limit in limit_array:
+                    for stop in stop_array:
+                        column_name = f'Limit {limit}, Stop {stop}'
+                        target_df[column_name] = [
+                            results[ticker_filing_date][(limit, stop)].get(target_key, None)
+                            for ticker_filing_date in results.keys()
+                        ]
+
+                # Save each target as its own sheet
+                target_df.to_excel(writer, sheet_name=target_key, index=False)
+
+        print(f"- Target data successfully saved to {output_file} with individual sheets for each target.")
+        return True
+
+    except Exception as e:
+        print(f"- Failed to save target data to Excel: {e}")
+        return None
 

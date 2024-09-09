@@ -1,45 +1,41 @@
 import pandas as pd
-from datetime import time, datetime
+import datetime
 import requests
 from bs4 import BeautifulSoup
 from io import StringIO
-from functools import partial
 
-def log_missing_values(df, step_name):
+def clean_data(df, threshold=0.05):
     """
-    Logs the number of missing values per column in the dataframe, sorted by most missing values first.
-    Also logs the total number of rows that have at least one missing value.
+    Clean the DataFrame by first dropping columns with more than the specified percentage
+    of missing values, then dropping rows with any missing values.
     
     Args:
-        df (pd.DataFrame): DataFrame to check for missing values.
-        step_name (str): A string describing the step at which this function is called.
+        df (pd.DataFrame): The DataFrame to clean.
+        threshold (float): The percentage of missing values allowed in a column before it is dropped.
+                           Default is 5% (i.e., 0.05).
+    
+    Returns:
+        pd.DataFrame: The cleaned DataFrame.
     """
-    # Count missing values for each column
-    missing_counts = df.isnull().sum()
-    
-    # Total number of rows with at least one missing value
-    total_rows_with_missing = df.isnull().any(axis=1).sum()
-    
-    # Only keep columns with missing values and sort by missing count (descending)
-    missing_counts = missing_counts[missing_counts > 0].sort_values(ascending=False)
-    
-    if total_rows_with_missing > 0:
-        print(f"\n[Missing Values Report after {step_name}]")
-        print(f"Total rows with at least one missing value: {total_rows_with_missing}")
-        
-        # Print the missing value count for each column, sorted
-        for column, count in missing_counts.items():
-            print(f"Column '{column:<40}': {count:>3} missing values")
-    else:
-        print(f"\n[No Missing Values after {step_name}]")
+    # Step 1: Drop columns where more than `threshold` % of the entries are missing
+    missing_percentage = df.isnull().mean()
+    columns_to_drop = missing_percentage[missing_percentage > threshold].index
+    df_cleaned = df.drop(columns=columns_to_drop)
 
+    if not columns_to_drop.empty:
+        print(f"- Dropped columns: {list(columns_to_drop)}, missing in more than {int(threshold*100)}% of entries")
 
+    # Step 2: Drop any remaining rows with missing values
+    df_cleaned.dropna(inplace=True)
 
+    print(f"- Remaining rows after dropping missing values: {len(df_cleaned)}")
+    
+    return df_cleaned
 
 def get_next_market_open(dt):
     # Assume market hours are 9:00 AM to 5:00 PM
-    market_open = time(9, 0)
-    market_close = time(17, 0)
+    market_open = datetime.time(9, 0)
+    market_close = datetime.time(17, 0)
     
     # If it's before 9:00 AM, move to 9:00 AM today
     if dt.time() < market_open:
@@ -148,7 +144,7 @@ def get_recent_trades(ticker):
             trade_date = pd.to_datetime(cells[1].text.strip())
             value = float(cells[11].text.strip().replace('$', '').replace(',', ''))
 
-            days_since_trade = (datetime.now() - trade_date).days
+            days_since_trade = (datetime.datetime.now() - trade_date).days
 
             if days_since_trade <= 30:
                 if trade_type == 'P - Purchase':
