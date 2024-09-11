@@ -143,6 +143,7 @@ class FeatureScraper:
         # Save the summary to an Excel file
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         output_file = os.path.join(data_dir, output_file)
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
         summary_df.to_excel(output_file, sheet_name='Feature Distribution')
         print(f"- Feature distribution summary saved to {output_file}.")
@@ -150,9 +151,8 @@ class FeatureScraper:
     def save_to_excel(self, file_path='output.xlsx'):
         """Save the self.data DataFrame to an Excel file."""
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        os.makedirs(data_dir, exist_ok=True)  # Create the data directory if it doesn't exist
-        
         file_path = os.path.join(data_dir, file_path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)  # Create the data directory if it doesn't exist
         if not self.data.empty:
             try:
                 self.data.to_excel(file_path, index=False)

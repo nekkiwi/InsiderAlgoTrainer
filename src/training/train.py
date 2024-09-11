@@ -61,7 +61,7 @@ class ModelTrainer:
         """Save models, results, and predictions."""
         save_training_data(results, all_predictions, self.output_dir, self.predictions_dir, self.model_type, self.target_name, features_df)
 
-    def run(self, target_name, model_type="RandomForest", selected_features=None, features_df=None, targets_df=None):
+    def run(self, target_name, model_type, selected_features=None, features_df=None, targets_df=None):
         """Run the full training process."""
         start_time = time.time()
         self.target_name = target_name.replace(" ", "-").lower()

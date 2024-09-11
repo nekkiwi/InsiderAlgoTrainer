@@ -2,10 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.naive_bayes import GaussianNB
-from sklearn.svm import SVC
-from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
+from imblearn.pipeline import Pipeline
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
 from sklearn.metrics import matthews_corrcoef, f1_score, accuracy_score, confusion_matrix, mean_squared_error
 from sklearn.model_selection import cross_val_predict, StratifiedKFold, KFold, cross_validate
 from tqdm import tqdm
@@ -28,21 +28,38 @@ def train_model_task_wrapper(args):
 
 def get_model(model_type, is_continuous):
     """Return the model instance based on the specified model type and target type."""
-    if model_type == "RandomForest":
-        return RandomForestRegressor(random_state=42) if is_continuous else RandomForestClassifier(random_state=42)
-    elif model_type == "NaivesBayes":
-        return GaussianNB()  # Naive Bayes is classification only
-    elif model_type == "RBF SVM":
-        return SVC(kernel='rbf', probability=True, random_state=42)  # SVM for classification
-    elif model_type == "Neural Net":
-        return MLPRegressor(hidden_layer_sizes=(128, 64, 32),  # Three hidden layers with 128, 64, and 32 neurons
-                            alpha=0.001,                        # L2 regularization
-                            max_iter=1000,                      # Maximum number of iterations
-                            early_stopping=True,                # Use early stopping to prevent overfitting
-                            random_state=42
-                            ) if is_continuous else MLPClassifier(random_state=42, max_iter=1000)
-    elif model_type == "Gaussian Process":
-        return GaussianProcessRegressor(random_state=42) if is_continuous else GaussianProcessClassifier(random_state=42)
+    if "RandomForest" in model_type:
+        if is_continuous:
+            return RandomForestRegressor(random_state=42)
+        else:
+            if model_type == "RandomForestUnderSample":
+                return Pipeline([('resample', RandomUnderSampler(random_state=42)),
+                                ('classifier', RandomForestClassifier(random_state=42))])
+            elif model_type == "RandomForestOverSample":
+                return Pipeline([('resample', SMOTE(random_state=42)),
+                                ('classifier', RandomForestClassifier(random_state=42))])
+    elif "NeuralNet" in model_type:
+        if is_continuous:
+            return MLPRegressor(hidden_layer_sizes=(128, 64, 32),  # Three hidden layers with 128, 64, and 32 neurons
+                                alpha=0.001,                        # L2 regularization
+                                max_iter=1000,                      # Maximum number of iterations
+                                early_stopping=True,                # Use early stopping to prevent overfitting
+                                random_state=42) 
+        else:
+            if model_type == "NeuralNetUnderSample":
+                return Pipeline([('resample', RandomUnderSampler(random_state=42)),
+                                ('classifier', MLPClassifier(hidden_layer_sizes=(128, 64, 32),  # Three hidden layers with 128, 64, and 32 neurons
+                                                            alpha=0.001,                        # L2 regularization
+                                                            max_iter=1000,                      # Maximum number of iterations
+                                                            early_stopping=True,                # Use early stopping to prevent overfitting
+                                                            random_state=42))])
+            if model_type == "NeuralNetOverSample":
+                return Pipeline([('resample', SMOTE(random_state=42)),
+                                ('classifier', MLPClassifier(hidden_layer_sizes=(128, 64, 32),  # Three hidden layers with 128, 64, and 32 neurons
+                                                            alpha=0.001,                        # L2 regularization
+                                                            max_iter=1000,                      # Maximum number of iterations
+                                                            early_stopping=True,                # Use early stopping to prevent overfitting
+                                                            random_state=42))])
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -69,7 +86,7 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
     y_aligned = y.loc[common_index]
 
     # Check if we are in a "sell" target and adjust model saving accordingly
-    if "sell" in target_name:
+    if "sell" in target_name or "limstop" in target_name:
         limit_stop_dir = os.path.join(model_save_dir, f'lim_{limit}_stop_{stop}')
         os.makedirs(limit_stop_dir, exist_ok=True)
     else:
@@ -109,6 +126,8 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
             "Accuracy": acc,
             "MSE": mse,
             "MCC": mcc,
+            "PPV": cm[1, 1]/(cm[1, 1]+cm[0, 1]),
+            "NPV": cm[0, 0]/(cm[0, 0]+cm[1, 0]),
             "F1_pos": f1_positive,
             "F1_neg": f1_negative,
             "TN": cm[0, 0],
@@ -129,6 +148,8 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
             "Stop": stop,
             "Accuracy": acc,
             "MCC": mcc,
+            "PPV": cm[1, 1]/(cm[1, 1]+cm[0, 1]),
+            "NPV": cm[0, 0]/(cm[0, 0]+cm[1, 0]),
             "F1_pos": f1_positive,
             "F1_neg": f1_negative,
             "TN": cm[0, 0],
@@ -147,8 +168,6 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
     })
 
     return result, {"Predictions": prediction_data, "Limit": limit, "Stop": stop}
-
-
 
 def save_training_data(results, all_predictions, output_dir, predictions_dir, model_type, target_name, features_df):
     """Save all models, results, and predictions in one call."""
@@ -200,6 +219,6 @@ def save_predictions(all_predictions, predictions_dir, model_short, target_name,
 
 def save_model(model, model_path):
     """Save the model to a specific file path."""
-    # os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     # joblib.dump(model, model_path)
-    print(f"- Model saved to {model_path}")
+    # print(f"- Model saved to {model_path}")

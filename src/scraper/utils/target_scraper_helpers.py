@@ -27,50 +27,99 @@ def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array
         for stop in stop_array:
             target_key = (limit, stop)
             targets[target_key] = {
-                'return_limit_sell' : 0,
-                'return_stop_sell'  : 0,
-                'alpha_limit_sell'  : 0,
-                'alpha_stop_sell'   : 0,
-                'pos_return_1w'     : 0,
-                'pos_alpha_1w'      : 0,
-                'final_return_1w'   : 0.0,
-                'final_alpha_1w'    : 0.0,
-                'pos_return_1m'     : 0,
-                'pos_alpha_1m'      : 0,
-                'final_return_1m'   : 0.0,
-                'final_alpha_1m'    : 0.0
+                'return_limit_sell'         : 0,
+                'return_stop_sell'          : 0,
+                'alpha_limit_sell'          : 0,
+                'alpha_stop_sell'           : 0,
+                'pos_return_1w_limstop'     : 0,
+                'pos_return_1m_limstop'     : 0,
+                'final_return_1w_limstop'   : 0.0,
+                'final_return_1m_limstop'   : 0.0,
+                'pos_alpha_1w_limstop'      : 0,
+                'pos_alpha_1m_limstop'      : 0,
+                'final_alpha_1w_limstop'    : 0.0,
+                'final_alpha_1m_limstop'    : 0.0,
+                'pos_return_1w_raw'         : 0,
+                'pos_alpha_1w_raw'          : 0,
+                'final_return_1w_raw'       : 0.0,
+                'final_alpha_1w_raw'        : 0.0,
+                'pos_return_1m_raw'         : 0,
+                'pos_alpha_1m_raw'          : 0,
+                'final_return_1m_raw'       : 0.0,
+                'final_alpha_1m_raw'        : 0.0
             }
+
+            # Process return limit/stop for 1 week (index 5) and 1 month (index 19)
+            return_limit_value_1w = None
+            return_limit_value_1m = None
 
             for i in range(1, len(stock_return_data)):
                 return_price_change = stock_return_data.iloc[i]
                 # Check for return limit/stop
                 if return_price_change >= limit:
                     targets[target_key]['return_limit_sell'] = 1
+                    return_limit_value_1w = return_price_change if i <= 5 else stock_return_data.iloc[5]
+                    return_limit_value_1m = return_price_change if i <= 19 else stock_return_data.iloc[19]
                     break
                 if return_price_change <= stop:
                     targets[target_key]['return_stop_sell'] = 1
+                    return_limit_value_1w = return_price_change if i <= 5 else stock_return_data.iloc[5]
+                    return_limit_value_1m = return_price_change if i <= 19 else stock_return_data.iloc[19]
                     break
 
-            for i in range(1, len(stock_return_data)):
+            # If no limit/stop occurred, take the values at index 5 (1 week) and index 19 (1 month)
+            if return_limit_value_1w is None:
+                return_limit_value_1w = stock_return_data.iloc[5] if len(stock_return_data) > 5 else stock_return_data.iloc[-1]
+            if return_limit_value_1m is None:
+                return_limit_value_1m = stock_return_data.iloc[19] if len(stock_return_data) > 19 else stock_return_data.iloc[-1]
+
+            # Store final return values
+            targets[target_key]['final_return_1w_limstop'] = return_limit_value_1w
+            targets[target_key]['final_return_1m_limstop'] = return_limit_value_1m
+            targets[target_key]['pos_return_1w_limstop'] = int(return_limit_value_1w > 0)
+            targets[target_key]['pos_return_1m_limstop'] = int(return_limit_value_1m > 0)
+
+            # Process alpha limit/stop for 1 week (index 5) and 1 month (index 19)
+            alpha_limit_value_1w = None
+            alpha_limit_value_1m = None
+
+            for i in range(1, len(stock_alpha_data)):
                 alpha_price_change = stock_alpha_data.iloc[i]
-                # Check for alpha limit/stop
+
+                # If limit or stop is reached, store the alpha value and break
                 if alpha_price_change >= limit:
                     targets[target_key]['alpha_limit_sell'] = 1
+                    alpha_limit_value_1w = alpha_price_change if i <= 5 else stock_alpha_data.iloc[5]
+                    alpha_limit_value_1m = alpha_price_change if i <= 19 else stock_alpha_data.iloc[19]
                     break
                 if alpha_price_change <= stop:
                     targets[target_key]['alpha_stop_sell'] = 1
+                    alpha_limit_value_1w = alpha_price_change if i <= 5 else stock_alpha_data.iloc[5]
+                    alpha_limit_value_1m = alpha_price_change if i <= 19 else stock_alpha_data.iloc[19]
                     break
 
+            # If no limit/stop occurred, take the values at index 5 (1 week) and index 19 (1 month)
+            if alpha_limit_value_1w is None:
+                alpha_limit_value_1w = stock_alpha_data.iloc[5] if len(stock_alpha_data) > 5 else stock_alpha_data.iloc[-1]
+            if alpha_limit_value_1m is None:
+                alpha_limit_value_1m = stock_alpha_data.iloc[19] if len(stock_alpha_data) > 19 else stock_alpha_data.iloc[-1]
+
+            # Store final alpha values
+            targets[target_key]['final_alpha_1w_limstop'] = alpha_limit_value_1w
+            targets[target_key]['final_alpha_1m_limstop'] = alpha_limit_value_1m
+            targets[target_key]['pos_alpha_1w_limstop'] = int(return_limit_value_1w > 0)
+            targets[target_key]['pos_alpha_1m_limstop'] = int(return_limit_value_1m > 0)
+
             # Calculate the final targets (after going through all the days)
-            targets[target_key]['pos_return_1w'] = int(stock_return_data.iloc[5] > 0)
-            targets[target_key]['pos_alpha_1w'] = int(stock_alpha_data.iloc[5] > 0)
-            targets[target_key]['final_return_1w'] = stock_return_data.iloc[5]
-            targets[target_key]['final_alpha_1w'] = stock_alpha_data.iloc[5]
+            targets[target_key]['pos_return_1w_raw'] = int(stock_return_data.iloc[5] > 0)
+            targets[target_key]['pos_alpha_1w_raw'] = int(stock_alpha_data.iloc[5] > 0)
+            targets[target_key]['final_return_1w_raw'] = stock_return_data.iloc[5]
+            targets[target_key]['final_alpha_1w_raw'] = stock_alpha_data.iloc[5]
             
-            targets[target_key]['pos_return_1m'] = int(stock_return_data.iloc[19] > 0)
-            targets[target_key]['pos_alpha_1m'] = int(stock_alpha_data.iloc[19] > 0)
-            targets[target_key]['final_return_1m'] = stock_return_data.iloc[19]
-            targets[target_key]['final_alpha_1m'] = stock_alpha_data.iloc[19]
+            targets[target_key]['pos_return_1m_raw'] = int(stock_return_data.iloc[19] > 0)
+            targets[target_key]['pos_alpha_1m_raw'] = int(stock_alpha_data.iloc[19] > 0)
+            targets[target_key]['final_return_1m_raw'] = stock_return_data.iloc[19]
+            targets[target_key]['final_alpha_1m_raw'] = stock_alpha_data.iloc[19]
 
     return targets
 
@@ -127,8 +176,8 @@ def save_targets_to_excel(results, limit_array, stop_array, output_file):
 
         #TODO FIX THE SINGLE COLUMN TARGETS IN THE TARGETS DISTRIBUTION
         # Identify the targets that are independent of limit/stop
-        single_column_targets = ['pos_return_1w', 'pos_alpha_1w', 'final_return_1w', 'final_alpha_1w',
-                                 'pos_return_1m', 'pos_alpha_1m', 'final_return_1m', 'final_alpha_1m']
+        single_column_targets = ['pos_return_1w_raw', 'pos_alpha_1w_raw', 'final_return_1w_raw', 'final_alpha_1w_raw',
+                                 'pos_return_1m_raw', 'pos_alpha_1m_raw', 'final_return_1m_raw', 'final_alpha_1m_raw']
 
         # Prepare a DataFrame to store these independent targets
         static_target_df = pd.DataFrame({

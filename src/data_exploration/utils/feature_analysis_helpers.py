@@ -37,6 +37,7 @@ def save_normalization_params(normalization_params, file_path):
     normalization_df = pd.DataFrame.from_dict(normalization_params, orient='index', columns=['min', 'max'])
     data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
     file_path = os.path.join(data_dir, file_path)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     normalization_df.to_excel(file_path)
     print(f"- Normalization parameters saved to {file_path}.")
 

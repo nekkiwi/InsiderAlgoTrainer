@@ -51,7 +51,7 @@ def save_to_excel(return_df, alpha_df, output_file):
         output_file (str): The path to the Excel file to save the data to.
     """
     stock_data_dir = os.path.dirname(output_file)
-    os.makedirs(stock_data_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
     # Write the return and alpha data to separate sheets
     with pd.ExcelWriter(output_file) as writer:
@@ -105,7 +105,7 @@ def save_final_features(features_df, features_out_file):
         features_out_file (str): The path to the Excel file to save the data to.
     """
     features_out_dir = os.path.dirname(features_out_file)
-    os.makedirs(features_out_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(features_out_file), exist_ok=True)
     
     features_df['Filing Date'] = features_df['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
     
