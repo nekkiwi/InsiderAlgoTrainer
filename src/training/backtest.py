@@ -12,7 +12,7 @@ class Backtester:
         self.stop_array = []
         self.stock_data = None
 
-    def process_predictions_parallel(self, prediction_gt_pairs, limit_array, stop_array):
+    def process_predictions_parallel(self, prediction_gt_pairs):
         """Process predictions and GT in parallel using multiprocessing."""
         all_results = []
         with ProcessPoolExecutor() as executor:
