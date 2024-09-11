@@ -23,9 +23,10 @@ class FeatureSelector:
         self.features_df = pd.read_excel(self.features_file)
         self.targets_df = pd.read_excel(self.targets_file, sheet_name=None)  # Load all sheets as a dictionary
 
+    def prepare_data(self):
         # Convert Filing Date to datetime format in both features and targets
         self.features_df['Filing Date'] = pd.to_datetime(self.features_df['Filing Date'], format='%d/%m/%Y %H:%M', errors='coerce')
-        for sheet_name, sheet_data in self.targets_df.items():
+        for sheet_name, _ in self.targets_df.items():
             self.targets_df[sheet_name]['Filing Date'] = pd.to_datetime(self.targets_df[sheet_name]['Filing Date'], format='%d/%m/%Y %H:%M', errors='coerce')
 
     def feature_selection_task(self, args):
@@ -45,20 +46,14 @@ class FeatureSelector:
         }
         return result
 
-    def perform_feature_selection(self, p_threshold=0.05, features_df=None, targets_df=None):
+    def perform_feature_selection(self):
         """Perform feature selection for each target and collect results."""
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.p_threshold = p_threshold
-        if features_df is None:
-            features_df = self.features_df
-        if targets_df is None:
-            targets_df = self.targets_df
-
         # Drop 'Ticker' and 'Filing Date' from the features DataFrame
-        X_encoded = features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore')
+        X_encoded = self.features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore')
 
-        for sheet_name, sheet_data in tqdm(targets_df.items(),desc="- Selecting features for targets"):
+        for sheet_name, sheet_data in tqdm(self.targets_df.items(),desc="- Selecting features for targets"):
             tasks = self.create_tasks(sheet_data, X_encoded)
 
             # Parallelize the feature selection
@@ -71,6 +66,10 @@ class FeatureSelector:
 
     def create_tasks(self, target_data, X_encoded):
         """Create tasks for each target column."""
+        # Ensure that the target_data is a DataFrame, if it's a Series, convert it to a DataFrame
+        if isinstance(target_data, pd.Series):
+            target_data = target_data.to_frame()
+
         # Drop 'Ticker' and 'Filing Date' from the target data as well
         target_data = target_data.drop(columns=['Ticker', 'Filing Date'], errors='ignore')
 
@@ -82,20 +81,34 @@ class FeatureSelector:
                 stop_value = limit_stop[1].replace('Stop ', '')
             except IndexError:
                 limit_value, stop_value = 'all', 'all'
+                
             y = target_data[column]
-            tasks.append((limit_value, stop_value, column, y, X_encoded))
+            
+            # Ensure that X_encoded and y have the same index and remove any rows with missing data
+            common_index = X_encoded.index.intersection(y.dropna().index)
+            X_encoded_aligned = X_encoded.loc[common_index]
+            y_aligned = y.loc[common_index]
+
+            tasks.append((limit_value, stop_value, column, y_aligned, X_encoded_aligned))
         return tasks
+
 
     def run(self, features_df=None, targets_df=None, p_threshold=0.05):
         """Run the feature selection process."""
-        if features_df is None or targets_df is None:
-            self.load_data()
-        
         start_time = time.time()
         print("\n### START ### Feature Selector")
+        
+        if features_df is None or targets_df is None:
+            self.load_data()
+        else:
+            self.features_df = features_df
+            self.targets_df = targets_df.to_dict()
+            self.p_threshold = 0.05
+
+        self.prepare_data()
 
         # Perform feature selection and collect results
-        self.perform_feature_selection(p_threshold, features_df, targets_df)
+        self.perform_feature_selection()
 
         # Save the results for all targets into one Excel file, each in a separate sheet
         save_selected_features(self.selected_features_dict, self.output_dir)

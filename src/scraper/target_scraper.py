@@ -33,9 +33,9 @@ class TargetScraper:
 
     def _process_ticker_targets_wrapper(self, ticker_info):
         """Wrapper to pass instance attributes to helper's process_ticker_targets function."""
-        return process_ticker_targets(ticker_info, self.return_df, self.alpha_df, self.limit_array, self.stop_array, self.high_threshold)
+        return process_ticker_targets(ticker_info, self.return_df, self.alpha_df, self.limit_array, self.stop_array)
 
-    def run(self, return_df, alpha_df, limit_array, stop_array, high_threshold):
+    def run(self, return_df, alpha_df, limit_array, stop_array):
         """Run the entire process to calculate targets, save them, and return the final DataFrame."""
         self.load_stock_data()
         start_time = time.time()
@@ -46,7 +46,6 @@ class TargetScraper:
         self.alpha_df = alpha_df if alpha_df is not None else self.alpha_df
         self.limit_array = limit_array
         self.stop_array = stop_array
-        self.high_threshold = high_threshold
 
         # Process target data
         self.create_target_data()
@@ -65,4 +64,4 @@ if __name__ == "__main__":
     scraper = TargetScraper()
     limit_array = [0.06, 0.08, 0.1, 0.12]
     stop_array = [-0.06, -0.08, -0.1, -0.12]
-    scraper.run(None, None, limit_array, stop_array, high_threshold=0.04)
+    scraper.run(None, None, limit_array, stop_array)

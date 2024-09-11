@@ -9,12 +9,12 @@ from .utils.stock_scraper_helpers import *
 class StockDataScraper:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        self.features_file = os.path.join(data_dir, 'interim/5_features_full_cleaned.xlsx')
-        self.features_out_file = os.path.join(data_dir, 'final/features_final.xlsx')
-        self.output_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
-        self.ticker_filing_dates = None
-        self.return_df = None
-        self.alpha_df = None
+        self.features_file      = os.path.join(data_dir, 'interim/5_features_full_cleaned.xlsx')
+        self.features_out_file  = os.path.join(data_dir, 'final/features_final.xlsx')
+        self.output_file        = os.path.join(data_dir, 'final/stock_data_final.xlsx')
+        self.ticker_filing_dates    = None
+        self.return_df              = None
+        self.alpha_df               = None
         self.max_days = 20
 
     def prepare_data(self):
@@ -38,8 +38,10 @@ class StockDataScraper:
 
         # Separate stock and alpha columns
         stock_columns = [col for col in stock_data_df.columns if 'Stock' in col]
-        self.return_df = calculate_returns(stock_data_df, stock_columns)
-        self.alpha_df = stock_data_df[['Ticker', 'Filing Date'] + [col for col in stock_data_df.columns if 'Alpha' in col]].copy()
+        self.return_df = stock_data_df[['Ticker', 'Filing Date'] + stock_columns].copy()
+        
+        alpha_columns = [col for col in stock_data_df.columns if 'Alpha' in col]
+        self.alpha_df = stock_data_df[['Ticker', 'Filing Date'] + alpha_columns].copy()
 
     def save_to_excel(self):
         """Save the returns and alpha sheets to an Excel file."""

@@ -1,6 +1,6 @@
 import pandas as pd
 
-def process_ticker_targets(ticker_info, return_df, alpha_df, limit_array, stop_array, high_threshold):
+def process_ticker_targets(ticker_info, return_df, alpha_df, limit_array, stop_array):
     """Process return and alpha data for a specific ticker and filing date."""
     ticker, filing_date = ticker_info
 
@@ -16,33 +16,33 @@ def process_ticker_targets(ticker_info, return_df, alpha_df, limit_array, stop_a
     ].iloc[:, 2:].squeeze()
 
     if not stock_return_data.empty and not stock_alpha_data.empty:
-        return (ticker, filing_date), process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array, high_threshold)
+        return (ticker, filing_date), process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array)
     
     return (ticker, filing_date), None
 
-def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array, high_threshold):
+def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array):
     """Calculate targets for both return and alpha data using specified limit and stop arrays."""
     targets = {}
     for limit in limit_array:
         for stop in stop_array:
             target_key = (limit, stop)
             targets[target_key] = {
-                'return_limit_sell': 0,
-                'return_stop_sell': 0,
-                'alpha_limit_sell': 0,
-                'alpha_stop_sell': 0,
-                'pos_return': 0,
-                'high_return': 0,
-                'pos_alpha': 0,
-                'high_alpha': 0,
-                'final_return': stock_return_data.iloc[-1],
-                'final_alpha': stock_alpha_data.iloc[-1],
+                'return_limit_sell' : 0,
+                'return_stop_sell'  : 0,
+                'alpha_limit_sell'  : 0,
+                'alpha_stop_sell'   : 0,
+                'pos_return_1w'     : 0,
+                'pos_alpha_1w'      : 0,
+                'final_return_1w'   : 0.0,
+                'final_alpha_1w'    : 0.0,
+                'pos_return_1m'     : 0,
+                'pos_alpha_1m'      : 0,
+                'final_return_1m'   : 0.0,
+                'final_alpha_1m'    : 0.0
             }
 
             for i in range(1, len(stock_return_data)):
                 return_price_change = stock_return_data.iloc[i]
-                alpha_price_change = stock_alpha_data.iloc[i]
-
                 # Check for return limit/stop
                 if return_price_change >= limit:
                     targets[target_key]['return_limit_sell'] = 1
@@ -51,6 +51,8 @@ def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array
                     targets[target_key]['return_stop_sell'] = 1
                     break
 
+            for i in range(1, len(stock_return_data)):
+                alpha_price_change = stock_alpha_data.iloc[i]
                 # Check for alpha limit/stop
                 if alpha_price_change >= limit:
                     targets[target_key]['alpha_limit_sell'] = 1
@@ -60,10 +62,15 @@ def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array
                     break
 
             # Calculate the final targets (after going through all the days)
-            targets[target_key]['pos_return'] = int(stock_return_data.iloc[-1] > 0)
-            targets[target_key]['high_return'] = int(stock_return_data.iloc[-1] > high_threshold)
-            targets[target_key]['pos_alpha'] = int(stock_alpha_data.iloc[-1] > 0)
-            targets[target_key]['high_alpha'] = int(stock_alpha_data.iloc[-1] > high_threshold)
+            targets[target_key]['pos_return_1w'] = int(stock_return_data.iloc[5] > 0)
+            targets[target_key]['pos_alpha_1w'] = int(stock_alpha_data.iloc[5] > 0)
+            targets[target_key]['final_return_1w'] = stock_return_data.iloc[5]
+            targets[target_key]['final_alpha_1w'] = stock_alpha_data.iloc[5]
+            
+            targets[target_key]['pos_return_1m'] = int(stock_return_data.iloc[19] > 0)
+            targets[target_key]['pos_alpha_1m'] = int(stock_alpha_data.iloc[19] > 0)
+            targets[target_key]['final_return_1m'] = stock_return_data.iloc[19]
+            targets[target_key]['final_alpha_1m'] = stock_alpha_data.iloc[19]
 
     return targets
 
@@ -118,8 +125,10 @@ def save_targets_to_excel(results, limit_array, stop_array, output_file):
         first_ticker = next(iter(results))
         target_keys = list(results[first_ticker][(limit_array[0], stop_array[0])].keys())
 
+        #TODO FIX THE SINGLE COLUMN TARGETS IN THE TARGETS DISTRIBUTION
         # Identify the targets that are independent of limit/stop
-        single_column_targets = ['pos_return', 'pos_alpha', 'high_return', 'high_alpha', 'final_return', 'final_alpha']
+        single_column_targets = ['pos_return_1w', 'pos_alpha_1w', 'final_return_1w', 'final_alpha_1w',
+                                 'pos_return_1m', 'pos_alpha_1m', 'final_return_1m', 'final_alpha_1m']
 
         # Prepare a DataFrame to store these independent targets
         static_target_df = pd.DataFrame({
@@ -164,7 +173,7 @@ def save_targets_to_excel(results, limit_array, stop_array, output_file):
                 target_df.to_excel(writer, sheet_name=target_key, index=False)
 
         print(f"- Target data successfully saved to {output_file} with individual sheets for each target.")
-        return True
+        return target_df
 
     except Exception as e:
         print(f"- Failed to save target data to Excel: {e}")

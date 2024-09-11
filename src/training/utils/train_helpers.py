@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
-from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.metrics import matthews_corrcoef, f1_score, accuracy_score, confusion_matrix, mean_squared_error
 from sklearn.model_selection import cross_val_predict, StratifiedKFold, KFold, cross_validate
@@ -35,7 +35,14 @@ def get_model(model_type, is_continuous):
     elif model_type == "RBF SVM":
         return SVC(kernel='rbf', probability=True, random_state=42)  # SVM for classification
     elif model_type == "Neural Net":
-        return MLPRegressor(random_state=42, max_iter=1000) if is_continuous else MLPClassifier(random_state=42, max_iter=1000)
+        return MLPRegressor(hidden_layer_sizes=(128, 64, 32),  # Three hidden layers with 128, 64, and 32 neurons
+                            alpha=0.001,                        # L2 regularization
+                            max_iter=1000,                      # Maximum number of iterations
+                            early_stopping=True,                # Use early stopping to prevent overfitting
+                            random_state=42
+                            ) if is_continuous else MLPClassifier(random_state=42, max_iter=1000)
+    elif model_type == "Gaussian Process":
+        return GaussianProcessRegressor(random_state=42) if is_continuous else GaussianProcessClassifier(random_state=42)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -48,13 +55,18 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
     # Select the features and target
     X = features_df[selected_features]
     target_column = f'Limit {limit}, Stop {stop}'
-    
+
     if target_column not in targets_df[target_name].columns:
         target_column = target_name
         if target_column not in targets_df[target_name].columns:
             return None, None
 
     y = targets_df[target_name][target_column]
+
+    # Ensure X and y have consistent lengths by aligning their indices
+    common_index = X.index.intersection(y.dropna().index)  # Drop rows with NaN values in y
+    X_aligned = X.loc[common_index].dropna()  # Drop rows with NaN values in X
+    y_aligned = y.loc[common_index]
 
     # Check if we are in a "sell" target and adjust model saving accordingly
     if "sell" in target_name:
@@ -66,23 +78,23 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
     # Use StratifiedKFold for classification and KFold for regression
     if "final" in target_name:
         kfold = KFold(n_splits=5, shuffle=True, random_state=42)
-        cv_results = cross_validate(model, X, y, cv=kfold, return_estimator=True)
+        cv_results = cross_validate(model, X_aligned, y_aligned, cv=kfold, return_estimator=True)
     else:  # Classification task (binary or multiclass)
         skf = StratifiedKFold(n_splits=5)
-        cv_results = cross_validate(model, X, y, cv=skf, return_estimator=True)
-    
+        cv_results = cross_validate(model, X_aligned, y_aligned, cv=skf, return_estimator=True)
+
     # Save each model from the 5-fold cross-validation
     for i, estimator in enumerate(cv_results['estimator'], start=1):
         model_path = os.path.join(limit_stop_dir, f'fold_{i}.joblib')
         save_model(estimator, model_path)
 
     # Handle the predictions as before
-    predictions = cross_val_predict(model, X, y, cv=kfold if 'final' in target_name else skf)
+    predictions = cross_val_predict(model, X_aligned, y_aligned, cv=kfold if 'final' in target_name else skf)
 
     # Determine if the target is continuous (final targets)
     if "final" in target_name:  # Continuous target
-        mse = mean_squared_error(y, predictions)
-        y_sign = np.sign(y) > 0
+        mse = mean_squared_error(y_aligned, predictions)
+        y_sign = np.sign(y_aligned) > 0
         pred_sign = np.sign(predictions) > 0
 
         mcc = matthews_corrcoef(y_sign, pred_sign)
@@ -106,11 +118,11 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
         }
 
     else:  # Binary target
-        mcc = matthews_corrcoef(y, predictions)
-        f1_positive = f1_score(y, predictions, pos_label=1)
-        f1_negative = f1_score(y, predictions, pos_label=0)
-        acc = accuracy_score(y, predictions)
-        cm = confusion_matrix(y, predictions)
+        mcc = matthews_corrcoef(y_aligned, predictions)
+        f1_positive = f1_score(y_aligned, predictions, pos_label=1)
+        f1_negative = f1_score(y_aligned, predictions, pos_label=0)
+        acc = accuracy_score(y_aligned, predictions)
+        cm = confusion_matrix(y_aligned, predictions)
 
         result = {
             "Limit": limit,
@@ -131,10 +143,11 @@ def train_model_task(row, features_df, targets_df, target_name, model, model_sav
 
     prediction_data = pd.DataFrame({
         pred_column_name: predictions,
-        gt_column_name: y
+        gt_column_name: y_aligned
     })
 
     return result, {"Predictions": prediction_data, "Limit": limit, "Stop": stop}
+
 
 
 def save_training_data(results, all_predictions, output_dir, predictions_dir, model_type, target_name, features_df):
@@ -187,6 +200,6 @@ def save_predictions(all_predictions, predictions_dir, model_short, target_name,
 
 def save_model(model, model_path):
     """Save the model to a specific file path."""
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    joblib.dump(model, model_path)
+    # os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    # joblib.dump(model, model_path)
     print(f"- Model saved to {model_path}")
