@@ -1,10 +1,58 @@
 import pandas as pd
-from utils.date_helpers import get_next_market_open
-from datetime import datetime
+import datetime
 import requests
 from bs4 import BeautifulSoup
 from io import StringIO
-from functools import partial
+
+def clean_data(df, threshold=0.05):
+    """
+    Clean the DataFrame by first dropping columns with more than the specified percentage
+    of missing values, then dropping rows with any missing values.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame to clean.
+        threshold (float): The percentage of missing values allowed in a column before it is dropped.
+                           Default is 5% (i.e., 0.05).
+    
+    Returns:
+        pd.DataFrame: The cleaned DataFrame.
+    """
+    # Step 1: Drop columns where more than `threshold` % of the entries are missing
+    missing_percentage = df.isnull().mean()
+    columns_to_drop = missing_percentage[missing_percentage > threshold].index
+    df_cleaned = df.drop(columns=columns_to_drop)
+
+    if not columns_to_drop.empty:
+        print(f"- Dropped columns: {list(columns_to_drop)}, missing in more than {int(threshold*100)}% of entries")
+
+    # Step 2: Drop any remaining rows with missing values
+    df_cleaned.dropna(inplace=True)
+
+    print(f"- Remaining rows after dropping missing values: {len(df_cleaned)}")
+    
+    return df_cleaned
+
+def get_next_market_open(dt):
+    # Assume market hours are 9:00 AM to 5:00 PM
+    market_open = datetime.time(9, 0)
+    market_close = datetime.time(17, 0)
+    
+    # If it's before 9:00 AM, move to 9:00 AM today
+    if dt.time() < market_open:
+        return dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    # If it's after 5:00 PM, move to 9:00 AM the next business day
+    if dt.time() >= market_close:
+        dt = dt + pd.tseries.offsets.BDay()
+        return dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    # Round up to the next full or half hour
+    minutes = dt.minute
+    if minutes > 0 and minutes <= 30:
+        return dt.replace(minute=30, second=0, microsecond=0)
+    else:
+        dt += pd.tseries.offsets.Hour()
+        return dt.replace(minute=0, second=0, microsecond=0)
 
 def get_html(url):
     response = requests.get(url)
@@ -96,7 +144,7 @@ def get_recent_trades(ticker):
             trade_date = pd.to_datetime(cells[1].text.strip())
             value = float(cells[11].text.strip().replace('$', '').replace(',', ''))
 
-            days_since_trade = (datetime.now() - trade_date).days
+            days_since_trade = (datetime.datetime.now() - trade_date).days
 
             if days_since_trade <= 30:
                 if trade_type == 'P - Purchase':

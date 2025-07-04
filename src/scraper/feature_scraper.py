@@ -1,22 +1,12 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-import sys
 import os
-import openpyxl
-import yfinance as yf
+import time
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import numpy as np
-from datetime import datetime
-from datetime import timedelta
 
-# Add the 'src' directory to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from utils.feature_scraper_helpers import *
-from utils.technical_indicators_helpers import *
-from utils.financial_ratios_helpers import *
+from .utils.feature_scraper_helpers import *
+from .utils.technical_indicators_helpers import *
+from .utils.financial_ratios_helpers import *
 
 class FeatureScraper:
     def __init__(self):
@@ -29,84 +19,111 @@ class FeatureScraper:
         return fetch_and_parse(url)
 
     def fetch_data_from_pages(self, num_months):
-        end_date = datetime.now() - timedelta(days=30)  # Start 1 month ago
+        end_date = datetime.datetime.now() - datetime.timedelta(days=30)  # Start 1 month ago
         date_ranges = []
 
         # Prepare the date ranges
         for _ in range(num_months):
-            start_date = end_date - timedelta(days=30)  # Each range is 1 month
+            start_date = end_date - datetime.timedelta(days=30)  # Each range is 1 month
             date_ranges.append((start_date, end_date))
             end_date = start_date  # Move back another month
 
         # Use multiprocessing to fetch and parse data in parallel
         with Pool(cpu_count()) as pool:
-            data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges)))
+            data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges), desc="- Scraping entries from openinsider.com for each month"))
 
         # Filter out None values (pages where no valid table was found)
         data_frames = [df for df in data_frames if df is not None]
 
         if data_frames:
             self.data = pd.concat(data_frames, ignore_index=True)
-            print(f"{len(self.data)} total entries extracted from pages!")
+            print(f"- {len(self.data)} total entries extracted!")
         else:
-            print("No data could be extracted.")
+            print("- No data could be extracted.")
     
-    def clean_table(self):
+    def clean_table(self, drop_threshold=0.05):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
-        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(20)
+        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
         
+        # Clean numeric columns
         self.data = clean_numeric_columns(self.data)
         
         # Drop rows where ΔOwn is negative
         self.data = self.data[self.data['ΔOwn'] >= 0]
         
+        # Parse titles
         self.data = parse_titles(self.data)
         self.data.drop(columns=['Title', 'Trade Date'], inplace=True)
+        
+        # Show the number of unique Ticker - Filing Date combinations
+        unique_combinations = self.data[['Ticker', 'Filing Date']].drop_duplicates().shape[0]
+        print(f"- Number of unique Ticker - Filing Date combinations before aggregation: {unique_combinations}")
         
         # Group by Ticker and Filing Date, then aggregate
         self.data = aggregate_group(self.data)
         
+        # Format the date column and drop any remaining rows with missing values
         self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
-        self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after cleaning and aggregating!")
         
-    def add_technical_indicators(self):
-        rows = self.data.to_dict('records')
-        with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows)))
-        self.data = pd.DataFrame(filter(None, processed_rows))
-        self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
-        self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after adding technical indicators!")
+        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
+        self.data = clean_data(self.data, drop_threshold)
 
-    def add_financial_ratios(self):
+        
+    def add_technical_indicators(self, drop_threshold=0.05):
         rows = self.data.to_dict('records')
+        
+        # Apply technical indicators
         with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows)))
+            processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows), desc="- Scraping technical indicators"))
+        
         self.data = pd.DataFrame(filter(None, processed_rows))
         
+        # Replace infinite values and drop rows with missing values
+        self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
+        
+        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
+        self.data = clean_data(self.data, drop_threshold)
+
+
+    def add_financial_ratios(self, drop_threshold=0.05):
+        rows = self.data.to_dict('records')
+        
+        # Apply financial ratios
+        with Pool(cpu_count()) as pool:
+            processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows), desc="- Scraping financial ratios"))
+        
+        self.data = pd.DataFrame(filter(None, processed_rows))
+        
+        # Add sector dummies and drop the Sector column
         sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
         self.data = pd.concat([self.data, sector_dummies], axis=1)
         self.data.drop(columns=['Sector'], inplace=True)
         
-        self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after adding financial ratios!")
+        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
+        self.data = clean_data(self.data, drop_threshold)
 
-    def add_insider_transactions(self):
+
+    def add_insider_transactions(self, drop_threshold=0.05):
         rows = self.data.to_dict('records')
+        
+        # Fetch insider transactions
         with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(get_recent_trades, [row['Ticker'] for row in rows]), total=len(rows)))
+            processed_rows = list(tqdm(pool.imap(get_recent_trades, [row['Ticker'] for row in rows]), total=len(rows), desc="- Scraping recent insider trades"))
+        
         for row, trade_data in zip(rows, processed_rows):
             if trade_data:
                 row.update(trade_data)
+        
         self.data = pd.DataFrame(rows)
-        self.data.dropna(inplace=True)
-        print(f"{len(self.data)} entries remained after adding insider transactions!")
+        
+        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
+        self.data = clean_data(self.data, drop_threshold)
+    
         
     def save_feature_distribution(self, output_file='feature_distribution.xlsx'):
         # Define the quantiles and statistics to be calculated
@@ -126,24 +143,24 @@ class FeatureScraper:
         # Save the summary to an Excel file
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         output_file = os.path.join(data_dir, output_file)
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
         summary_df.to_excel(output_file, sheet_name='Feature Distribution')
-        print(f"Feature distribution summary saved to {output_file}.")
+        print(f"- Feature distribution summary saved to {output_file}.")
     
     def save_to_excel(self, file_path='output.xlsx'):
         """Save the self.data DataFrame to an Excel file."""
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        os.makedirs(data_dir, exist_ok=True)  # Create the data directory if it doesn't exist
-        
         file_path = os.path.join(data_dir, file_path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)  # Create the data directory if it doesn't exist
         if not self.data.empty:
             try:
                 self.data.to_excel(file_path, index=False)
-                print(f"Data successfully saved to {file_path}.")
+                print(f"- Data successfully saved to {file_path}.\n")
             except Exception as e:
-                print(f"Failed to save data to Excel: {e}")
+                print(f"- Failed to save data to Excel: {e}")
         else:
-            print("No data to save.")
+            print("- No data to save.")
             
     def load_sheet(self, file_path='output.xlsx'):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
@@ -152,24 +169,29 @@ class FeatureScraper:
         if os.path.exists(file_path):
             try:
                 self.data = pd.read_excel(file_path)
-                print(f"Sheet successfully loaded from {file_path}.")
+                print(f"- Sheet successfully loaded from {file_path}.")
             except Exception as e:
-                print(f"Failed to load sheet from {file_path}: {e}")
+                print(f"- Failed to load sheet from {file_path}: {e}")
         else:
-            print(f"File '{file_path}' does not exist.")
+            print(f"- File '{file_path}' does not exist.")
         
     def run(self, num_months):
+        start_time = time.time()
+        print("\n### START ### Feature Scraper")
         self.fetch_data_from_pages(num_months)
         self.save_to_excel('interim/0_features_raw.xlsx')
-        self.clean_table()
+        self.clean_table(drop_threshold=0.05)
         self.save_to_excel('interim/1_features_formatted.xlsx')
-        self.add_technical_indicators()
+        self.add_technical_indicators(drop_threshold=0.05)
         self.save_to_excel('interim/2_features_TI.xlsx')
-        self.add_financial_ratios()
+        self.add_financial_ratios(drop_threshold=0.05)
         self.save_to_excel('interim/3_features_TI_FR.xlsx')
-        self.add_insider_transactions()
+        self.add_insider_transactions(drop_threshold=0.05)
         self.save_to_excel('interim/4_features_TI_FR_IT.xlsx')
         self.save_feature_distribution('output/feature_distribution.xlsx')
+        elapsed_time = timedelta(seconds=int(time.time() - start_time))
+        print(f"### END ### Feature Scraper - time elapsed: {elapsed_time}")
+        return self.data
         
 if __name__ == "__main__":
     feature_scraper = FeatureScraper()
