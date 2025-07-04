@@ -32,36 +32,35 @@ def main():
     # Feature Scraper #
     ###################
     
-    # num_months = 60
-    # features_df = feature_scraper.run(num_months)
-    # features_df_preprocessed = feature_analyzer.run(features_df)
+    num_months = 60
+    features_df = feature_scraper.run(num_months)
+    features_df_preprocessed = feature_analyzer.run(features_df)
     
     #################
     # Stock Scraper #
     #################
     
-    # features_df_filtered, return_df, alpha_df = stock_scraper.run(features_df_preprocessed)
-    # stock_analyzer.run(return_df, alpha_df)
+    features_df_filtered, return_df, alpha_df = stock_scraper.run(features_df_preprocessed)
+    stock_analyzer.run(return_df, alpha_df)
     
     ##################
     # Target Scraper #
     ##################
     
-    # limit_array = [ 0.02,  0.04,  0.06, 0.08,   0.1]
-    # stop_array  = [-0.14, -0.12, -0.1, -0.08, -0.06, -0.04, -0.02]
+    limit_array = [0.03]
+    stop_array =  [-0.02]
     
-    # targets_df = target_scraper.run(return_df, alpha_df, limit_array, stop_array)
+    targets_df = target_scraper.run(return_df, alpha_df, limit_array, stop_array)
 
     ############
     # Training #
     ############
 
-    # selected_features = feature_selector.run(features_df_filtered, targets_df, p_threshold=0.05)
+    selected_features = feature_selector.run(features_df_filtered, targets_df, p_threshold=0.05)
     
-    models  = ['NeuralNetUnderSample', 'NeuralNetOverSample', 'RandomForestUnderSample', 'RandomForestOverSample']
-    targets = ['pos_return_1m_raw',    'pos_alpha_1m_raw',       'final_return_1m_raw',     'final_alpha_1m_raw',
-               'pos_return_1m_limstop','final_return_1m_limstop','pos_alpha_1m_limstop',    'final_alpha_1m_limstop',
-               'return_limit_sell',    'return_stop_sell',       'alpha_limit_sell',        'alpha_stop_sell']
+    models  = ['RandomForestOverSample']
+    targets = ['pos_return_1w_raw', 'pos_alpha_1w_raw', 'pos_return_1w_limstop', 'pos_alpha_1w_limstop', 
+               'pos_return_1m_raw', 'pos_alpha_1m_raw', 'pos_return_1m_limstop', 'pos_alpha_1m_limstop']
 
     for model in models: 
         for target in targets:
@@ -71,10 +70,10 @@ def main():
     # Backtesting #
     ###############
     
-    # limit_array = [ 0.02,  0.04,  0.06, 0.08,   0.1]
-    # stop_array  = [-0.14, -0.12, -0.1, -0.08, -0.06, -0.04, -0.02]
+    limit_array = [ 0.03]
+    stop_array  = [-0.02]
 
-    # backtester.run(limit_array, stop_array)
+    backtester.run(limit_array, stop_array)
 
 if __name__ == "__main__":
     main()
