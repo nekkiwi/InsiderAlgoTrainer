@@ -8,6 +8,7 @@ class StockAnalysis:
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.stock_returns_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
         self.output_dir = os.path.join(data_dir, 'analysis/stock_analysis/all')
+
         self.return_df = None
         self.alpha_df = None
 

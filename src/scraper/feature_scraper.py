@@ -43,7 +43,7 @@ class FeatureScraper:
             print(f"- {len(self.data)} total entries extracted!")
         else:
             print("- No data could be extracted.")
-    
+ 
     def clean_table(self, train, drop_threshold=0.05):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
@@ -95,7 +95,6 @@ class FeatureScraper:
         # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
         self.data = clean_data(self.data, drop_threshold)
 
-
     def add_financial_ratios(self, drop_threshold=0.05):
         # No parallelization => yfinance has rate-limit
         
@@ -118,7 +117,6 @@ class FeatureScraper:
         
         # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
         self.data = clean_data(self.data, drop_threshold)
-
 
     def add_insider_transactions(self, drop_threshold=0.05):
         rows = self.data.to_dict('records')

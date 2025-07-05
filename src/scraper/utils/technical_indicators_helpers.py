@@ -204,7 +204,7 @@ def process_ticker_technical_indicators(row):
     """Process each ticker by downloading the stock data, benchmark data, and calculating indicators."""
     ticker = row['Ticker']
     filing_date = row['Filing Date']
-    
+
     # Download stock and benchmark data
     stock_data, benchmark_data = download_stock_data(ticker, filing_date, max_period=50, interval='1d', benchmark_ticker='SPY')
     

@@ -81,8 +81,6 @@ def create_stock_data_dict(results):
 
     return stock_data_dict
 
-
-
 def save_to_excel(return_df, alpha_df, output_file):
     """
     Save the returns and alpha sheets to an Excel file.

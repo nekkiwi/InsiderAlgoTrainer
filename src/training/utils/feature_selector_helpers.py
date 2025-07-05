@@ -6,9 +6,11 @@ from matplotlib import pyplot as plt
 from src.data_exploration.utils.feature_analysis_helpers import identify_feature_types
 
 
+
 def select_features(X, y, p_threshold=0.1):
     """Select features based on the type of the target and feature types."""
     categorical_features, _ = identify_feature_types(X)
+
 
     scores = pd.Series(index=X.columns, dtype=float)
     p_values = pd.Series(index=X.columns, dtype=float)

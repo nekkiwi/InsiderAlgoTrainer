@@ -8,6 +8,7 @@ from .utils.feature_analysis_helpers import *
 class FeatureAnalyzer:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
+
         self.data = pd.DataFrame()
         self.continuous_features = None
         self.categorical_features = None
