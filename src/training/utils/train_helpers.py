@@ -220,5 +220,5 @@ def save_predictions(all_predictions, predictions_dir, model_short, target_name,
 def save_model(model, model_path):
     """Save the model to a specific file path."""
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    # joblib.dump(model, model_path)
-    # print(f"- Model saved to {model_path}")
+    joblib.dump(model, model_path)
+    print(f"- Model saved to {model_path}")

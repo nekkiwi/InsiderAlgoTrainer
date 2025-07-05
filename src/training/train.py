@@ -10,7 +10,7 @@ class ModelTrainer:
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.features_file = os.path.join(data_dir, "final/features_final.xlsx")
         self.targets_file = os.path.join(data_dir, "final/targets_final.xlsx")
-        self.selected_features_file = os.path.join(data_dir, "output/feature_selection/selected_features.xlsx")
+        self.selected_features_file = os.path.join(data_dir, "analysis/feature_selection/selected_features.xlsx")
         self.output_dir = os.path.join(data_dir, "training/stats")
         self.predictions_dir = os.path.join(data_dir, "training/predictions")
         self.model_save_dir = os.path.join(data_dir, "models")

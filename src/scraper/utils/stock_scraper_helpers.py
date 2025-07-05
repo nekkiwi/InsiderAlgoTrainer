@@ -24,22 +24,64 @@ def create_stock_data_dict(results):
     stock_data_dict = {}
 
     for ticker, filing_date, max_days, ticker_data, spy_data in results:
-        if ticker_data is not None and spy_data is not None:
-            # Normalize stock returns
-            stock_returns = (ticker_data / ticker_data[0]) - 1
-            spy_returns = (spy_data / spy_data[0]) - 1
+        # skip if missing
+        if ticker_data is None or spy_data is None:
+            continue
 
-            # Calculate alpha: stock return - SPY return
-            alpha = stock_returns - spy_returns
+        # pick stock_prices
+        if ticker_data.shape[1] == 1:
+            stock_prices = ticker_data.iloc[:, 0]
+        elif 'Close' in ticker_data.columns:
+            stock_prices = ticker_data['Close']
+        elif 'Adj Close' in ticker_data.columns:
+            stock_prices = ticker_data['Adj Close']
+        else:
+            continue
 
-            # For each day, store the stock price and the alpha value as separate columns
-            stock_data_dict[(ticker, filing_date.strftime('%d/%m/%Y %H:%M'))] = {}
+        # pick spy_prices
+        if spy_data.shape[1] == 1:
+            spy_prices = spy_data.iloc[:, 0]
+        elif 'Close' in spy_data.columns:
+            spy_prices = spy_data['Close']
+        elif 'Adj Close' in spy_data.columns:
+            spy_prices = spy_data['Adj Close']
+        else:
+            continue
 
-            for i in range(max_days):
-                stock_data_dict[(ticker, filing_date.strftime('%d/%m/%Y %H:%M'))][f'Day {i+1} Stock'] = stock_returns[i]
-                stock_data_dict[(ticker, filing_date.strftime('%d/%m/%Y %H:%M'))][f'Day {i+1} Alpha'] = alpha[i]
+        # ensure sorted by date
+        stock_prices = stock_prices.sort_index()
+        spy_prices   = spy_prices.sort_index()
+
+        # need at least one price
+        if stock_prices.empty or spy_prices.empty:
+            continue
+
+        # avoid zero‐division
+        first_sp = stock_prices.iloc[0]
+        first_spy = spy_prices.iloc[0]
+        if first_sp == 0 or first_spy == 0:
+            continue
+
+        # compute scalar Series of returns
+        stock_returns = (stock_prices / first_sp) - 1
+        spy_returns   = (spy_prices   / first_spy) - 1
+        alpha         = stock_returns - spy_returns
+
+        key = (ticker, filing_date.strftime('%d/%m/%Y %H:%M'))
+        stock_data_dict[key] = {}
+
+        # now each .iloc[i] is a scalar float64, so float(...) will work
+        for i in range(max_days):
+            if i < len(stock_returns):
+                stock_data_dict[key][f'Day {i+1} Stock'] = float(stock_returns.iloc[i])
+                stock_data_dict[key][f'Day {i+1} Alpha'] = float(alpha.iloc[i])
+            else:
+                stock_data_dict[key][f'Day {i+1} Stock'] = None
+                stock_data_dict[key][f'Day {i+1} Alpha'] = None
 
     return stock_data_dict
+
+
 
 def save_to_excel(return_df, alpha_df, output_file):
     """

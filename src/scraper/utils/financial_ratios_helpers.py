@@ -3,6 +3,7 @@ import contextlib
 import os
 from datetime import timedelta
 import pandas as pd
+import time
 import json
 
 def fetch_financial_data(ticker, filing_date):

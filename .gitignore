@@ -23,3 +23,5 @@ venv.bak/
 .vscode/
 
 data/
+
+src/alpaca/api_keys.json

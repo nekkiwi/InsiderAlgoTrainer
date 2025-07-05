@@ -125,44 +125,61 @@ def process_targets(stock_return_data, stock_alpha_data, limit_array, stop_array
 
 
 def calculate_target_distribution(results, dist_out_file):
-    """Calculate and return the distribution of each target for each limit-stop combination."""
+    """
+    Calculate and return the distribution of each target for each
+    limit-stop combination across all tickers, and save to Excel.
+    """
     distribution_data = []
 
-    # Iterate over the first entry to get all the metric names
-    first_key = next(iter(results))  # Get the first Ticker and Filing Date tuple
-    first_data = results[first_key]  # This will be the dictionary of limit-stop keys to their metrics
-    
-    for limit_stop_key in first_data.keys():  # Iterate over the limit-stop combinations
-        limit, stop = limit_stop_key  # Extract limit and stop values
-        for metric in first_data[limit_stop_key].keys():  # Iterate over each target metric (e.g., 'return_limit_sell')
-            metric_values = []
-            for target_data in results.values():  # Collect values for the current metric across all results
-                metric_value = target_data[limit_stop_key].get(metric, None)
-                if metric_value is not None:
-                    metric_values.append(metric_value)
+    # 1) Gather the full set of limit/stop combos
+    all_limit_stop = set()
+    for ticker_data in results.values():
+        all_limit_stop.update(ticker_data.keys())
 
-            if metric_values:
-                metric_series = pd.Series(metric_values)
-                distribution_metrics = metric_series.describe(percentiles=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
+    # 2) For each combo, gather every metric name that any ticker has for it
+    for limit, stop in sorted(all_limit_stop):
+        # Collect all metrics seen under this (limit, stop)
+        all_metrics = set()
+        for ticker_data in results.values():
+            if (limit, stop) in ticker_data:
+                all_metrics.update(ticker_data[(limit, stop)].keys())
 
-                distribution_data.append({
-                    'Limit': limit,
-                    'Stop': stop,
-                    'Target': metric.replace(" ", "-").lower(),
-                    'min': distribution_metrics['min'],
-                    '1%': distribution_metrics['1%'],
-                    '5%': distribution_metrics['5%'],
-                    '10%': distribution_metrics['10%'],
-                    '25%': distribution_metrics['25%'],
-                    '50%': distribution_metrics['50%'],
-                    '75%': distribution_metrics['75%'],
-                    '90%': distribution_metrics['90%'],
-                    '95%': distribution_metrics['95%'],
-                    '99%': distribution_metrics['99%'],
-                    'max': distribution_metrics['max'],
-                    'mean': distribution_metrics['mean']
-                })
+        # 3) Now for each metric, gather values across all tickers
+        for metric in sorted(all_metrics):
+            vals = []
+            for ticker_data in results.values():
+                if (limit, stop) in ticker_data:
+                    v = ticker_data[(limit, stop)].get(metric)
+                    if v is not None:
+                        vals.append(v)
 
+            if not vals:
+                continue
+
+            ser = pd.Series(vals)
+            desc = ser.describe(
+                percentiles=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
+            )
+
+            distribution_data.append({
+                'Limit': limit,
+                'Stop': stop,
+                'Target': metric,           # or metric.replace(" ", "-").lower()
+                'min':   desc['min'],
+                '1%':    desc['1%'],
+                '5%':    desc['5%'],
+                '10%':   desc['10%'],
+                '25%':   desc['25%'],
+                '50%':   desc['50%'],
+                '75%':   desc['75%'],
+                '90%':   desc['90%'],
+                '95%':   desc['95%'],
+                '99%':   desc['99%'],
+                'max':   desc['max'],
+                'mean':  desc['mean'],
+            })
+
+    # 4) Build DataFrame and save
     distribution_df = pd.DataFrame(distribution_data)
     distribution_df.to_excel(dist_out_file, index=False)
     print(f"- Target distribution successfully saved to {dist_out_file}.")

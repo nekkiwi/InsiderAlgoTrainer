@@ -3,19 +3,12 @@ from sklearn.feature_selection import f_classif, chi2, f_regression
 import os
 import seaborn as sns
 from matplotlib import pyplot as plt
+from src.data_exploration.utils.feature_analysis_helpers import identify_feature_types
 
 
 def select_features(X, y, p_threshold=0.1):
     """Select features based on the type of the target and feature types."""
-    categorical_features = X.columns.intersection([
-        "CEO", "CFO", "COO", "Dir", "Pres", "VP", "TenPercent", 
-        "CDL_DOJI", "CDL_HAMMER", "CDL_ENGULFING", 
-        "Sector_Basic Materials", "Sector_Communication Services", 
-        "Sector_Consumer Cyclical", "Sector_Consumer Defensive", 
-        "Sector_Energy", "Sector_Financial Services", 
-        "Sector_Healthcare", "Sector_Industrials", "Sector_Real Estate", 
-        "Sector_Technology", "Sector_Utilities"
-    ])
+    categorical_features, _ = identify_feature_types(X)
 
     scores = pd.Series(index=X.columns, dtype=float)
     p_values = pd.Series(index=X.columns, dtype=float)

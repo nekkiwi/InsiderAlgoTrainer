@@ -3,7 +3,7 @@ import pandas as pd
 import yfinance as yf
 import contextlib
 import os
-import sys
+import numpy as np
 
 def download_stock_data(ticker, filing_date, max_period=50, interval='1d', benchmark_ticker='SPY'):
     """Download stock data for a given ticker over a specific period."""
@@ -52,95 +52,151 @@ def normalize_indicators(indicators, stock_data):
     return normalized_indicators
 
 def calculate_technical_indicators(row, stock_data):
-    """Calculate technical indicators for a given stock data."""
+    """
+    Calculate a suite of technical indicators for a given stock data
+    and assign the most recent values to the row.
+    """
+    # Convert relevant columns to 1-D numpy arrays of type double
+    close  = stock_data['Close'].to_numpy(dtype='float64').flatten()
+    high   = stock_data['High'].to_numpy(dtype='float64').flatten()
+    low    = stock_data['Low'].to_numpy(dtype='float64').flatten()
+    volume = stock_data['Volume'].to_numpy(dtype='float64').flatten()
+    open_  = stock_data['Open'].to_numpy(dtype='float64').flatten()
+
     indicators = {}
 
     # Moving Averages
-    indicators['SMA_10'] = talib.SMA(stock_data['Close'], timeperiod=10)
-    indicators['SMA_50'] = talib.SMA(stock_data['Close'], timeperiod=50)
-    indicators['EMA_10'] = talib.EMA(stock_data['Close'], timeperiod=10)
-    indicators['EMA_50'] = talib.EMA(stock_data['Close'], timeperiod=50)
+    sma10 = talib.SMA(close, timeperiod=10)
+    sma50 = talib.SMA(close, timeperiod=50)
+    ema10 = talib.EMA(close, timeperiod=10)
+    ema50 = talib.EMA(close, timeperiod=50)
+    indicators['SMA_10'] = sma10[-1]    if sma10.size    else None
+    indicators['SMA_50'] = sma50[-1]    if sma50.size    else None
+    indicators['EMA_10'] = ema10[-1]    if ema10.size    else None
+    indicators['EMA_50'] = ema50[-1]    if ema50.size    else None
 
     # Momentum Indicators
-    indicators['RSI_14'] = talib.RSI(stock_data['Close'], timeperiod=14)
-    indicators['MACD'], indicators['MACD_Signal'], indicators['MACD_Hist'] = talib.MACD(stock_data['Close'])
-    indicators['ADX_14'] = talib.ADX(stock_data['High'], stock_data['Low'], stock_data['Close'], timeperiod=14)
-    indicators['CCI_14'] = talib.CCI(stock_data['High'], stock_data['Low'], stock_data['Close'], timeperiod=14)
-    indicators['ROC'] = talib.ROC(stock_data['Close'], timeperiod=10)
-    indicators['MFI_14'] = talib.MFI(stock_data['High'], stock_data['Low'], stock_data['Close'], stock_data['Volume'], timeperiod=14)
-    indicators['WILLR_14'] = talib.WILLR(stock_data['High'], stock_data['Low'], stock_data['Close'], timeperiod=14)
-    indicators['STOCH_K'], indicators['STOCH_D'] = talib.STOCH(stock_data['High'], stock_data['Low'], stock_data['Close'])
+    rsi14      = talib.RSI(close, timeperiod=14)
+    macd, macd_signal, macd_hist = talib.MACD(close)
+    adx14      = talib.ADX(high, low, close, timeperiod=14)
+    cci14      = talib.CCI(high, low, close, timeperiod=14)
+    roc        = talib.ROC(close, timeperiod=10)
+    mfi14      = talib.MFI(high, low, close, volume, timeperiod=14)
+    willr14    = talib.WILLR(high, low, close, timeperiod=14)
+    stoch_k, stoch_d = talib.STOCH(high, low, close)
+    indicators['RSI_14']      = rsi14[-1]      if rsi14.size      else None
+    indicators['MACD']        = macd[-1]       if macd.size       else None
+    indicators['MACD_Signal'] = macd_signal[-1]if macd_signal.size else None
+    indicators['MACD_Hist']   = macd_hist[-1]  if macd_hist.size  else None
+    indicators['ADX_14']      = adx14[-1]      if adx14.size      else None
+    indicators['CCI_14']      = cci14[-1]      if cci14.size      else None
+    indicators['ROC']         = roc[-1]        if roc.size        else None
+    indicators['MFI_14']      = mfi14[-1]      if mfi14.size      else None
+    indicators['WILLR_14']    = willr14[-1]    if willr14.size    else None
+    indicators['STOCH_K']     = stoch_k[-1]    if stoch_k.size    else None
+    indicators['STOCH_D']     = stoch_d[-1]    if stoch_d.size    else None
 
     # Volatility Indicators
-    indicators['ATR_14'] = talib.ATR(stock_data['High'], stock_data['Low'], stock_data['Close'], timeperiod=14)
-    indicators['Bollinger_Upper'], _, indicators['Bollinger_Lower'] = talib.BBANDS(stock_data['Close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+    atr14 = talib.ATR(high, low, close, timeperiod=14)
+    upper, _, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2)
+    indicators['ATR_14']          = atr14[-1] if atr14.size else None
+    indicators['Bollinger_Upper'] = upper[-1] if upper.size else None
+    indicators['Bollinger_Lower'] = lower[-1] if lower.size else None
 
     # Volume Indicators
-    indicators['OBV'] = talib.OBV(stock_data['Close'], stock_data['Volume'])
-    
+    obv = talib.OBV(close, volume)
+    indicators['OBV'] = obv[-1] if obv.size else None
+
     # Pattern Recognition
-    indicators['CDL_DOJI'] = talib.CDLDOJI(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
-    indicators['CDL_HAMMER'] = talib.CDLHAMMER(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
-    indicators['CDL_ENGULFING'] = talib.CDLENGULFING(stock_data['Open'], stock_data['High'], stock_data['Low'], stock_data['Close'])
-    
-    indicators['CDL_DOJI'] = indicators['CDL_DOJI'].apply(lambda x: int(x / 100))
-    indicators['CDL_HAMMER'] = indicators['CDL_HAMMER'].apply(lambda x: int(x / 100))
-    indicators['CDL_ENGULFING'] = indicators['CDL_ENGULFING'].apply(lambda x: int(x / 100))
+    doji      = talib.CDLDOJI(open_, high, low, close)
+    hammer    = talib.CDLHAMMER(open_, high, low, close)
+    engulfing = talib.CDLENGULFING(open_, high, low, close)
+    indicators['CDL_DOJI']      = int(doji[-1]      / 100) if doji.size      else None
+    indicators['CDL_HAMMER']    = int(hammer[-1]    / 100) if hammer.size    else None
+    indicators['CDL_ENGULFING'] = int(engulfing[-1] / 100) if engulfing.size else None
 
-    # Other Indicators (A selection of additional useful indicators)
-    indicators['AROON_Up'], indicators['AROON_Down'] = talib.AROON(stock_data['High'], stock_data['Low'], timeperiod=14)
-    indicators['SAR'] = talib.SAR(stock_data['High'], stock_data['Low'], acceleration=0.02, maximum=0.2)
+    # Aroon
+    aroon_up, aroon_down = talib.AROON(high, low, timeperiod=14)
+    indicators['AROON_Up']   = aroon_up[-1]   if aroon_up.size   else None
+    indicators['AROON_Down'] = aroon_down[-1] if aroon_down.size else None
 
-    # Normalize indicators relative to the closing price
-    normalized_indicators = normalize_indicators(indicators, stock_data)
+    # Parabolic SAR
+    sar = talib.SAR(high, low, acceleration=0.02, maximum=0.2)
+    indicators['SAR'] = sar[-1] if sar.size else None
 
-    # Assign the most recent values of each indicator to the row
-    for key, value in normalized_indicators.items():
-        row[key] = value.iloc[-1] if not value.empty else None  # Get the most recent value of each indicator
+    # Assign all indicators back to the row
+    for key, val in indicators.items():
+        row[key] = val
 
     return row
 
 def calculate_alpha_indicators(stock_data, benchmark_data):
-    """Calculate alpha-related indicators comparing the stock to the benchmark."""
-    indicators = {}
+    """
+    Calculate alpha-related indicators comparing the stock to the benchmark.
+    Returns a dict with:
+      Cumulative_Alpha, Rolling_Alpha_30, Beta,
+      Jensen_Alpha, Tracking_Error, Information_Ratio
+    """
+    # Initialize all to None
+    indicators = {k: None for k in [
+        'Cumulative_Alpha','Rolling_Alpha_30','Beta',
+        'Jensen_Alpha','Tracking_Error','Information_Ratio'
+    ]}
 
-    # Check if there's enough data to proceed
+    # Need at least 30 days to compute anything meaningful
     if len(stock_data) < 30 or len(benchmark_data) < 30:
-        return {key: None for key in ['Cumulative_Alpha', 'Rolling_Alpha_30', 'Beta', 'Jensen_Alpha', 'Tracking_Error', 'Information_Ratio']}
-    
-    # Calculate daily returns
-    stock_returns = stock_data['Close'].pct_change().dropna()
-    benchmark_returns = benchmark_data['Close'].pct_change().dropna()
+        return indicators
 
-    # Ensure returns align in length
-    min_length = min(len(stock_returns), len(benchmark_returns))
-    stock_returns = stock_returns[-min_length:]
-    benchmark_returns = benchmark_returns[-min_length:]
+    # 1) compute daily returns as pandas Series
+    sr = (stock_data['Close']
+          .astype('float64')
+          .pct_change()
+          .dropna())
+    br = (benchmark_data['Close']
+          .astype('float64')
+          .pct_change()
+          .dropna())
 
-    # Calculate excess returns
-    excess_returns = stock_returns - benchmark_returns
+    # 2) align lengths
+    n = min(len(sr), len(br))
+    sr = sr.iloc[-n:]
+    br = br.iloc[-n:]
 
-    # Cumulative Alpha
-    indicators['Cumulative_Alpha'] = excess_returns.cumsum().iloc[-1]
+    # 3) pull out 1-D numpy arrays
+    sr_arr = sr.to_numpy().flatten()
+    br_arr = br.to_numpy().flatten()
 
-    # Rolling Alpha (30 days)
-    indicators['Rolling_Alpha_30'] = excess_returns.rolling(window=30).mean().iloc[-1]
+    # 4) compute excess returns (still a 1-D numpy)
+    excess = sr_arr - br_arr
 
-    # Beta
-    covariance = stock_returns.cov(benchmark_returns)
-    variance = benchmark_returns.var()
-    indicators['Beta'] = covariance / variance if variance > 0 else None
+    # 5) cumulative alpha
+    indicators['Cumulative_Alpha'] = np.nansum(excess)
 
-    # Jensen's Alpha (CAPM)
-    risk_free_rate = 0.01 / 252  # Assuming a 1% annual risk-free rate, daily return
-    expected_returns = risk_free_rate + indicators['Beta'] * (benchmark_returns.mean() - risk_free_rate) if indicators['Beta'] is not None else None
-    indicators['Jensen_Alpha'] = (stock_returns.mean() - expected_returns) * 252 if expected_returns is not None else None  # Annualized
+    # 6) rolling 30-day alpha via pandas on a flat 1-D array
+    excess_series = pd.Series(excess)
+    indicators['Rolling_Alpha_30'] = excess_series.rolling(window=30).mean().iloc[-1]
 
-    # Tracking Error
-    indicators['Tracking_Error'] = excess_returns.std() * (252 ** 0.5) if not excess_returns.empty else None  # Annualized
+    # 7) beta via sample covariance / variance
+    if n > 1:
+        cov = np.cov(sr_arr, br_arr, ddof=1)[0,1]
+        var = np.var(br_arr, ddof=1)
+        indicators['Beta'] = cov / var if var > 0 else None
 
-    # Information Ratio
-    indicators['Information_Ratio'] = indicators['Cumulative_Alpha'] / indicators['Tracking_Error'] if indicators['Tracking_Error'] else None
+    # 8) Jensen’s Alpha (annualized)
+    beta = indicators['Beta']
+    if beta is not None:
+        rf = 0.01 / 252  # daily risk-free
+        exp_ret = rf + beta * (np.nanmean(br_arr) - rf)
+        indicators['Jensen_Alpha'] = (np.nanmean(sr_arr) - exp_ret) * 252
+
+    # 9) Tracking Error (annualized stdev of excess)
+    if excess.size > 1:
+        indicators['Tracking_Error'] = np.nanstd(excess, ddof=1) * np.sqrt(252)
+
+    # 10) Information Ratio
+    te = indicators['Tracking_Error']
+    if te:
+        indicators['Information_Ratio'] = indicators['Cumulative_Alpha'] / te
 
     return indicators
 
@@ -148,7 +204,7 @@ def process_ticker_technical_indicators(row):
     """Process each ticker by downloading the stock data, benchmark data, and calculating indicators."""
     ticker = row['Ticker']
     filing_date = row['Filing Date']
-
+    
     # Download stock and benchmark data
     stock_data, benchmark_data = download_stock_data(ticker, filing_date, max_period=50, interval='1d', benchmark_ticker='SPY')
     
@@ -159,12 +215,9 @@ def process_ticker_technical_indicators(row):
     indicators = calculate_technical_indicators(row, stock_data)
     # Calculate alpha-related indicators
     alpha_indicators = calculate_alpha_indicators(stock_data, benchmark_data)
-    # Merge all indicators
     indicators.update(alpha_indicators)
-    # Normalize indicators as needed
-    normalized_indicators = normalize_indicators(indicators, stock_data)
     # Update the row with all indicators
-    for key, value in normalized_indicators.items():
+    for key, value in indicators.items():
         row[key] = value
 
     return row

@@ -18,19 +18,22 @@ class FeatureScraper:
         url = f"{self.base_url}pl=1&ph=&ll=&lh=&fd=-1&fdr={start_date.month}%2F{start_date.day}%2F{start_date.year}+-+{end_date.month}%2F{end_date.day}%2F{end_date.year}&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=10&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=0&cnt=1000&page=1"
         return fetch_and_parse(url)
 
-    def fetch_data_from_pages(self, num_months):
-        end_date = datetime.datetime.now() - datetime.timedelta(days=30)  # Start 1 month ago
+    def fetch_data_from_pages(self, num_weeks, train=False):
+        start_days_ago = 0
+        if train:
+            start_days_ago = 30
+        end_date = datetime.datetime.now() - datetime.timedelta(days=start_days_ago)  # Start 1 month ago
         date_ranges = []
 
         # Prepare the date ranges
-        for _ in range(num_months):
-            start_date = end_date - datetime.timedelta(days=30)  # Each range is 1 month
+        for _ in range(num_weeks):
+            start_date = end_date - datetime.timedelta(days=7)  # Each range is 1 month
             date_ranges.append((start_date, end_date))
             end_date = start_date  # Move back another month
 
         # Use multiprocessing to fetch and parse data in parallel
         with Pool(cpu_count()) as pool:
-            data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges), desc="- Scraping entries from openinsider.com for each month"))
+            data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges), desc="- Scraping entries from openinsider.com for each week"))
 
         # Filter out None values (pages where no valid table was found)
         data_frames = [df for df in data_frames if df is not None]
@@ -41,13 +44,16 @@ class FeatureScraper:
         else:
             print("- No data could be extracted.")
     
-    def clean_table(self, drop_threshold=0.05):
+    def clean_table(self, train, drop_threshold=0.05):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
-        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
+        if train:
+            cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
+        else:
+            cutoff_date = pd.to_datetime('today')
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
         
         # Clean numeric columns
@@ -91,18 +97,24 @@ class FeatureScraper:
 
 
     def add_financial_ratios(self, drop_threshold=0.05):
+        # No parallelization => yfinance has rate-limit
+        
         rows = self.data.to_dict('records')
         
-        # Apply financial ratios
-        with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(process_ticker_financial_ratios, rows), total=len(rows), desc="- Scraping financial ratios"))
+        # Apply financial ratios sequentially
+        processed_rows = []
+        for row in tqdm(rows, desc="- Scraping financial ratios"):
+            result = process_ticker_financial_ratios(row)
+            if result is not None:
+                processed_rows.append(result)
         
-        self.data = pd.DataFrame(filter(None, processed_rows))
+        self.data = pd.DataFrame(processed_rows)
         
-        # Add sector dummies and drop the Sector column
-        sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
-        self.data = pd.concat([self.data, sector_dummies], axis=1)
-        self.data.drop(columns=['Sector'], inplace=True)
+        if 'Sector' in self.data.columns:
+            # Add sector dummies and drop the Sector column
+            sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
+            self.data = pd.concat([self.data, sector_dummies], axis=1)
+            self.data.drop(columns=['Sector'], inplace=True)
         
         # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
         self.data = clean_data(self.data, drop_threshold)
@@ -175,25 +187,30 @@ class FeatureScraper:
         else:
             print(f"- File '{file_path}' does not exist.")
         
-    def run(self, num_months):
+    def run(self, num_weeks, train):
         start_time = time.time()
         print("\n### START ### Feature Scraper")
-        self.fetch_data_from_pages(num_months)
-        self.save_to_excel('interim/0_features_raw.xlsx')
-        self.clean_table(drop_threshold=0.05)
-        self.save_to_excel('interim/1_features_formatted.xlsx')
+        if train: 
+            stage = "train" 
+        else: 
+            stage = "infer"
+        self.fetch_data_from_pages(num_weeks, train)
+        self.save_to_excel(f'interim/{stage}/0_features_raw.xlsx')
+        self.clean_table(train, drop_threshold=0.05)
+        self.save_to_excel(f'interim/{stage}/1_features_formatted.xlsx')
         self.add_technical_indicators(drop_threshold=0.05)
-        self.save_to_excel('interim/2_features_TI.xlsx')
-        self.add_financial_ratios(drop_threshold=0.05)
-        self.save_to_excel('interim/3_features_TI_FR.xlsx')
+        self.save_to_excel(f'interim/{stage}/2_features_TI.xlsx')
+        self.add_financial_ratios(drop_threshold=0.2)
+        self.save_to_excel(f'interim/{stage}/3_features_TI_FR.xlsx')
         self.add_insider_transactions(drop_threshold=0.05)
-        self.save_to_excel('interim/4_features_TI_FR_IT.xlsx')
-        self.save_feature_distribution('output/feature_distribution.xlsx')
+        self.save_to_excel(f'interim/{stage}/4_features_TI_FR_IT.xlsx')
+        if train:
+            self.save_feature_distribution('analysis/feature_distribution.xlsx')
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
         print(f"### END ### Feature Scraper - time elapsed: {elapsed_time}")
         return self.data
         
 if __name__ == "__main__":
     feature_scraper = FeatureScraper()
-    feature_scraper.run(num_months=12)
+    feature_scraper.run(num_weeks=12*4)
     

@@ -12,7 +12,7 @@ class FeatureSelector:
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.features_file = os.path.join(data_dir, "final/features_final.xlsx")
         self.targets_file = os.path.join(data_dir, "final/targets_final.xlsx")
-        self.output_dir = os.path.join(data_dir, "output/feature_selection")
+        self.output_dir = os.path.join(data_dir, "analysis/feature_selection")
         self.features_df = None
         self.targets_df = None
         self.p_threshold = 0.05

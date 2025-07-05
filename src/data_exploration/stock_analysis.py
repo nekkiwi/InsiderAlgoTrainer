@@ -7,7 +7,7 @@ class StockAnalysis:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.stock_returns_file = os.path.join(data_dir, 'final/stock_data_final.xlsx')
-        self.output_dir = os.path.join(data_dir, 'output/stock_analysis/all')
+        self.output_dir = os.path.join(data_dir, 'analysis/stock_analysis/all')
         self.return_df = None
         self.alpha_df = None
 
@@ -27,12 +27,12 @@ class StockAnalysis:
             self.alpha_df = alpha_df
 
         # Process return_df
-        filter_jumps(self.return_df)
+        self.return_df = filter_jumps(self.return_df)
         save_summary_statistics(self.return_df, self.output_dir, 'stock_returns_summary_stats_return.xlsx')
         plot_combined(self.return_df, self.output_dir, '_return')
 
         # Process alpha_df
-        filter_jumps(self.alpha_df)
+        self.alpha_df = filter_jumps(self.alpha_df)
         save_summary_statistics(self.alpha_df, self.output_dir, 'stock_returns_summary_stats_alpha.xlsx')
         plot_combined(self.alpha_df, self.output_dir, '_alpha')
 

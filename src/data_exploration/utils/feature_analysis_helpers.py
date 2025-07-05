@@ -87,21 +87,47 @@ def normalize_continuous_features(data, continuous_features):
     print("- Applied Min-Max Normalization to continuous features.")
     return data, normalization_params
 
-def identify_feature_types(data):
-    """Identify categorical and continuous features."""
-    categorical_feature_names = ["CEO", "CFO", "COO", "Dir", "Pres", "VP", "TenPercent", 
-                                 "CDL_DOJI", "CDL_HAMMER", "CDL_ENGULFING", 
-                                 "Sector_Basic Materials", "Sector_Communication Services", 
-                                 "Sector_Consumer Cyclical", "Sector_Consumer Defensive", 
-                                 "Sector_Energy", "Sector_Financial Services", 
-                                 "Sector_Healthcare", "Sector_Industrials", "Sector_Real Estate", 
-                                 "Sector_Technology", "Sector_Utilities"]
+# def identify_feature_types(data):
+#     """Identify categorical and continuous features."""
+#     categorical_feature_names = ["CEO", "CFO", "COO", "Dir", "Pres", "VP", "TenPercent", 
+#                                  "CDL_DOJI", "CDL_HAMMER", "CDL_ENGULFING", 
+#                                  "Sector_Basic Materials", "Sector_Communication Services", 
+#                                  "Sector_Consumer Cyclical", "Sector_Consumer Defensive", 
+#                                  "Sector_Energy", "Sector_Financial Services", 
+#                                  "Sector_Healthcare", "Sector_Industrials", "Sector_Real Estate", 
+#                                  "Sector_Technology", "Sector_Utilities"]
 
-    categorical_features = data[[feature for feature in categorical_feature_names if feature in data.columns]]
-    continuous_feature_names = [feature for feature in data.columns if feature not in categorical_feature_names]
-    continuous_features = data[continuous_feature_names]
+#     categorical_features = data[[feature for feature in categorical_feature_names if feature in data.columns]]
+#     continuous_feature_names = [feature for feature in data.columns if feature not in categorical_feature_names]
+#     continuous_features = data[continuous_feature_names]
 
-    return categorical_features, continuous_features
+#     return categorical_features, continuous_features
+
+def identify_feature_types(df):
+    """
+    Very simple split:
+      - Categorical: columns whose set of non-null values is exactly {0,1}, 
+                     or whose dtype is object/category/bool.
+      - Continuous:  all other numeric columns.
+      - Everything else: categorical.
+    Returns (categorical_cols, continuous_cols).
+    """
+    categorical_cols = []
+    continuous_cols  = []
+    
+    for col in df.columns:
+        ser = df[col]
+        # drop nulls for the value‐check
+        vals = set(ser.dropna().unique())
+        
+        # 1) 0/1‐only → categorical
+        if vals == {0, 1}:
+            categorical_cols.append(col)
+        
+        else:
+            continuous_cols.append(col)
+    
+    return categorical_cols, continuous_cols
 
 # Filtering and clipping functions
 def filter_low_variance_features(data, continuous_features, categorical_features, variance_threshold=0.02, categorical_threshold=0.02):
@@ -134,6 +160,7 @@ def filter_low_variance_features(data, continuous_features, categorical_features
 
 def clip_continuous_features(data, continuous_features, lower=0.01, upper=0.99):
     """Clip continuous features at the specified lower and upper percentiles."""
+    pd.set_option('future.no_silent_downcasting', True)
     for column in continuous_features:
         if column in data.columns:
             lower_bound = data[column].quantile(lower)
