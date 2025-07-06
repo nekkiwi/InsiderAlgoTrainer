@@ -3,9 +3,9 @@ import pandas as pd
 from datetime import timedelta
 import time
 
-from .utils.feature_analysis_helpers import *
+from .utils.feature_preprocess_helpers import *
 
-class FeatureAnalyzer:
+class FeaturePreprocessor:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
         self.data = pd.DataFrame()
@@ -14,7 +14,7 @@ class FeatureAnalyzer:
         self.corr_matrix = None
         self.ticker_filing_dates = None
         self.normalization_params = {}
-        self.normalization_path = os.path.join(data_dir,'analysis/feature_analysis/normalization_params.xlsx')
+        self.normalization_path = os.path.join(data_dir,'analysis/feature_preprocess/normalization_params.xlsx')
 
     def prepare_data(self):
         self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'], dayfirst=True, errors='coerce')
@@ -24,8 +24,8 @@ class FeatureAnalyzer:
         else:
             raise ValueError("- Failed to load feature data. Please check the file and its contents.")
 
-    def save_feature_data(self, file_path):
-        features_cleaned = save_feature_data(self.data, self.ticker_filing_dates, file_path)
+    def save_feature_data(self, file_path, train):
+        features_cleaned = save_feature_data(self.data, self.ticker_filing_dates, file_path, train)
         return features_cleaned
 
     def identify_feature_types(self):
@@ -96,16 +96,11 @@ class FeatureAnalyzer:
 
     def run(self, features_df, train):
         start_time = time.time()
-        print("\n### START ### Feature Analysis")
+        print("\n### START ### Feature Preprocessing")
 
         """Run the full analysis pipeline."""
-        if train:
-            stage = "train"
-        else:
-            stage = "infer"
-            
-        if features_df is None:
-            self.data = load_feature_data(f'interim/{stage}/4_features_TI_FR_IT.xlsx')
+        if features_df is None and train:
+            self.data = load_feature_data(f'interim/train/4_features_TI_FR_IT.xlsx')
         else:
             self.data = features_df
             
@@ -115,18 +110,18 @@ class FeatureAnalyzer:
         if train:
             self.filter_low_variance_features(variance_threshold=0.02, categorical_threshold=0.02)
             self.clip_and_normalize_features(lower=0.01, upper=0.99)
-            self.calculate_and_plot_correlations('analysis/feature_analysis')
+            self.calculate_and_plot_correlations('analysis/feature_preprocess')
             self.drop_highly_correlated_features(threshold=0.9)
             features_cleaned = self.save_feature_data('interim/train/5_features_full_cleaned.xlsx')
         else:
             self.normalize_before_inference()
-            features_cleaned = self.save_feature_data('final/current_features_final.xlsx')
+            features_cleaned = self.save_feature_data('', train)
 
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
-        print(f"### END ### Feature Analysis - time elapsed: {elapsed_time}")
+        print(f"### END ### Feature Preprocess - time elapsed: {elapsed_time}")
 
         return features_cleaned
 
 if __name__ == "__main__":
-    analyzer = FeatureAnalyzer()
-    analyzer.run()
+    preprocessor = FeaturePreprocessor()
+    preprocessor.run()

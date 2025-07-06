@@ -9,13 +9,13 @@ from .utils.stock_scraper_helpers import *
 class StockDataScraper:
     def __init__(self):
         data_dir = os.path.join(os.path.dirname(__file__), '../../data')
-        self.features_file      = os.path.join(data_dir, 'interim/5_features_full_cleaned.xlsx')
+        self.features_file      = os.path.join(data_dir, 'interim/train/5_features_full_cleaned.xlsx')
         self.features_out_file  = os.path.join(data_dir, 'final/features_final.xlsx')
         self.output_file        = os.path.join(data_dir, 'final/stock_data_final.xlsx')
         self.ticker_filing_dates    = None
         self.return_df              = None
         self.alpha_df               = None
-        self.max_days = 20
+        self.max_days = 40
 
     def prepare_data(self):
         self.features_df['Filing Date'] = pd.to_datetime(self.features_df['Filing Date'], dayfirst=True)

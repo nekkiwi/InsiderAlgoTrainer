@@ -11,12 +11,19 @@ def main():
     # Run Trade #
     #############
 
-    targets = ['pos_alpha_1m_raw']
     amount = 100 # €
     holding_period = 30 # days
-    threshold = 0.7 # prediction threshold after which I buy
+    
+    # If just following the model, specify model and threshold
+    config = {
+        "targets": ["final_return_1m_raw"],
+        "threshold": 0.06
+    }
+    
+    # If using the find_good_invesment, specify ticker
+    # config = {"symbol": "AAPL"}
 
-    alpaca_trader.run(targets, threshold, amount, holding_period)
+    alpaca_trader.run(config, amount, holding_period)
     
 if __name__ == "__main__":
     main()

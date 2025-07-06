@@ -12,15 +12,16 @@ class FeatureScraper:
     def __init__(self):
         self.base_url = "http://openinsider.com/screener?"
         self.data = pd.DataFrame()
+        self.train = False
         
     def process_web_page(self, date_range):
         start_date, end_date = date_range
         url = f"{self.base_url}pl=1&ph=&ll=&lh=&fd=-1&fdr={start_date.month}%2F{start_date.day}%2F{start_date.year}+-+{end_date.month}%2F{end_date.day}%2F{end_date.year}&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=10&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=0&cnt=1000&page=1"
         return fetch_and_parse(url)
 
-    def fetch_data_from_pages(self, num_weeks, train=False):
+    def fetch_data_from_pages(self, num_weeks):
         start_days_ago = 0
-        if train:
+        if self.train:
             start_days_ago = 30
         end_date = datetime.datetime.now() - datetime.timedelta(days=start_days_ago)  # Start 1 month ago
         date_ranges = []
@@ -44,13 +45,13 @@ class FeatureScraper:
         else:
             print("- No data could be extracted.")
     
-    def clean_table(self, train, drop_threshold=0.05):
+    def clean_table(self, drop_threshold=0.05):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
-        if train:
+        if self.train:
             cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
         else:
             cutoff_date = pd.to_datetime('today')
@@ -109,6 +110,7 @@ class FeatureScraper:
                 processed_rows.append(result)
         
         self.data = pd.DataFrame(processed_rows)
+        time.sleep(1)
         
         if 'Sector' in self.data.columns:
             # Add sector dummies and drop the Sector column
@@ -190,21 +192,22 @@ class FeatureScraper:
     def run(self, num_weeks, train):
         start_time = time.time()
         print("\n### START ### Feature Scraper")
-        if train: 
-            stage = "train" 
-        else: 
-            stage = "infer"
-        self.fetch_data_from_pages(num_weeks, train)
-        self.save_to_excel(f'interim/{stage}/0_features_raw.xlsx')
-        self.clean_table(train, drop_threshold=0.05)
-        self.save_to_excel(f'interim/{stage}/1_features_formatted.xlsx')
+        self.train = train
+        self.fetch_data_from_pages(num_weeks)
+        if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
+        
+        self.clean_table(drop_threshold=0.05)
+        if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
+        
         self.add_technical_indicators(drop_threshold=0.05)
-        self.save_to_excel(f'interim/{stage}/2_features_TI.xlsx')
+        if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
+        
         self.add_financial_ratios(drop_threshold=0.2)
-        self.save_to_excel(f'interim/{stage}/3_features_TI_FR.xlsx')
+        if train: self.save_to_excel(f'interim/train/3_features_TI_FR.xlsx')
+        
         self.add_insider_transactions(drop_threshold=0.05)
-        self.save_to_excel(f'interim/{stage}/4_features_TI_FR_IT.xlsx')
-        if train:
+        if train: 
+            self.save_to_excel(f'interim/train/4_features_TI_FR_IT.xlsx')
             self.save_feature_distribution('analysis/feature_distribution.xlsx')
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
         print(f"### END ### Feature Scraper - time elapsed: {elapsed_time}")

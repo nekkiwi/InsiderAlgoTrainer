@@ -68,16 +68,11 @@ class AlpacaTrader:
         except Exception as e:
             print(f"Error fetching open positions: {e}")
 
-    def read_signals(self) -> pd.DataFrame:
+    def read_signals(self, df) -> pd.DataFrame:
         """
         Load inference output, filter tickers with score >= threshold.
         Expects first column 'Ticker', third column is score.
         """
-        if not os.path.exists(self.inference_file):
-            print(f"Error: Inference file not found at {self.inference_file}")
-            return pd.DataFrame()
-
-        df = pd.read_excel(self.inference_file)
         df.columns = [c.strip() for c in df.columns]
         ticker_col = df.columns[0]
         score_col = df.columns[2]
@@ -85,10 +80,7 @@ class AlpacaTrader:
         signals.columns = ['symbol', 'score']
         return signals
 
-    def place_orders(self, signals: pd.DataFrame, amount: float):
-        if signals.empty:
-            return
-
+    def place_orders(self, symbol, amount: float):
         print("\nChecking for stocks to buy...")
 
         # Get currently held positions
@@ -98,49 +90,62 @@ class AlpacaTrader:
         open_orders = self.client.list_orders(status='open')
         open_buy_symbols = {o.symbol for o in open_orders if o.side == 'buy'}
 
-        for _, row in signals.iterrows():
-            symbol = row['symbol']
+        if symbol in held_symbols:
+            print(f"Skipping {symbol}: already held.")
+            return
 
-            if symbol in held_symbols:
-                print(f"Skipping {symbol}: already held.")
-                continue
+        if symbol in open_buy_symbols:
+            print(f"Skipping {symbol}: buy order already open.")
+            return
 
-            if symbol in open_buy_symbols:
-                print(f"Skipping {symbol}: buy order already open.")
-                continue
+        try:
+            price, qty_to_buy = get_price_and_quantity(self.client, symbol, amount)
 
-            try:
-                price, qty_to_buy = get_price_and_quantity(self.client, symbol, amount)
+            if qty_to_buy <= 0:
+                print(f"Skipping {symbol}: ${amount:.2f} < ${price:.2f}")
+                return
 
-                if qty_to_buy <= 0:
-                    print(f"Skipping {symbol}: ${amount:.2f} < ${price:.2f}")
-                    continue
+            print(f"Placing BUY for {qty_to_buy} shares of {symbol} at ~${price:.2f} for a total of: ${qty_to_buy * price:.2f}.")
+            submit_buy_order(self.client, symbol, qty_to_buy)
 
-                print(f"Placing BUY for {qty_to_buy} shares of {symbol} at ~${price:.2f} for a total of: ${qty_to_buy * price:.2f}.")
-                submit_buy_order(self.client, symbol, qty_to_buy)
-
-            except Exception as e:
-                print(f"Error buying {symbol}: {e}")
+        except Exception as e:
+            print(f"Error buying {symbol}: {e}")
 
 
-    def run(self, targets, threshold, amount, holding_period):
+    def run(self, config, amount, holding_period, results_df=None):
         """
         High-level orchestration: sell matured positions, then read signals and place new buy orders.
+
+        Config dict determines mode:
+            - Score-based: config contains only 'symbol'
+            - Threshold-based: config contains 'targets' and 'threshold'
         """
         self.holding_period_days = holding_period
-        self.threshold = threshold
-        
-        # First, sell any positions that have exceeded the holding period
         self.sell_matured_positions()
+
+        if "symbol" in config and len(config) == 1:
+            # --- SCORE-BASED MODE ---
+            self.place_orders(config["symbol"], amount)
+        elif "targets" in config and "threshold" in config:
+            # --- THRESHOLD-BASED MODE ---
+            self.threshold = config["threshold"]
+            for target in config["targets"]:
+                if results_df is None: 
+                    self.inference_file = os.path.join(self.inference_file_dir, f"{target}_inference_output.xlsx")
+                    df = pd.read_excel(self.inference_file)
+                else:
+                    df = results_df
+                signals = self.read_signals(df)
+                if signals.empty:
+                    print(f"\nNo new signals above threshold for {target}. Nothing to buy.")
+                else:
+                    for _, row in signals.iterrows():
+                        self.place_orders(row["symbol"], amount)
+        else:
+            raise ValueError("❌ Invalid config: must contain either only 'symbol', or both 'targets' and 'threshold'")
+
+
         
-        for target in targets:
-            # Second, read new signals and buy eligible stocks
-            self.inference_file = os.path.join(self.inference_file_dir, f"{target}_inference_output.xlsx")
-            signals = self.read_signals()
-            if signals.empty:
-                print("\nNo new signals above threshold or file not found. Nothing to buy.")
-            else:
-                self.place_orders(signals, amount)
         
 if __name__ == '__main__':
     trader = AlpacaTrader()

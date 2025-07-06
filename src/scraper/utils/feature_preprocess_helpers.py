@@ -47,23 +47,24 @@ def get_ticker_filing_dates(data):
     ticker_filing_dates['Filing Date'] = ticker_filing_dates['Filing Date'].dt.strftime('%d/%m/%Y %H:%M')
     return ticker_filing_dates
 
-def save_feature_data(data, ticker_filing_dates, file_path):
+def save_feature_data(data, ticker_filing_dates, file_path, train):
     """Save the processed feature data."""
     data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
-    file_path = os.path.join(data_dir, file_path)
     ticker_filing_dates['Filing Date'] = pd.to_datetime(ticker_filing_dates['Filing Date'], dayfirst=True, errors='coerce')
     ticker_filing_dates.dropna(subset=['Filing Date'], inplace=True)
     ticker_filing_dates['Filing Date'] = ticker_filing_dates['Filing Date'].dt.strftime('%d/%m/%Y %H:%M')
     final_data = pd.concat([ticker_filing_dates, data], axis=1)
 
-    if not final_data.empty:
-        try:
-            final_data.to_excel(file_path, index=False)
-            print(f"- Data successfully saved to {file_path}.")
-        except Exception as e:
-            print(f"- Failed to save data to Excel: {e}")
-    else:
-        print("- No data to save.")
+    if train:
+        file_path = os.path.join(data_dir, file_path)
+        if not final_data.empty:
+            try:
+                final_data.to_excel(file_path, index=False)
+                print(f"- Data successfully saved to {file_path}.")
+            except Exception as e:
+                print(f"- Failed to save data to Excel: {e}")
+        else:
+            print("- No data to save.")
     return final_data
 
 def normalize_continuous_features(data, continuous_features):

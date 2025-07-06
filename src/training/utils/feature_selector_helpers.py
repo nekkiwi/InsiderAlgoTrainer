@@ -3,7 +3,7 @@ from sklearn.feature_selection import f_classif, chi2, f_regression
 import os
 import seaborn as sns
 from matplotlib import pyplot as plt
-from src.data_exploration.utils.feature_analysis_helpers import identify_feature_types
+from src.scraper.utils.feature_preprocess_helpers import identify_feature_types
 
 
 def select_features(X, y, p_threshold=0.1):

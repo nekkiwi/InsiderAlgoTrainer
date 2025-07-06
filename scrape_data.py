@@ -1,8 +1,8 @@
 from src.scraper.target_scraper import TargetScraper
 from src.scraper.feature_scraper import FeatureScraper
 from src.scraper.stock_scraper import StockDataScraper
-from src.data_exploration.feature_analysis import FeatureAnalyzer
-from src.data_exploration.stock_analysis import StockAnalysis
+from src.scraper.feature_preprocess import FeaturePreprocessor
+from src.scraper.stock_analysis import StockAnalysis
 
 def main():    
     ###################
@@ -10,7 +10,7 @@ def main():
     ###################
     
     feature_scraper     = FeatureScraper()
-    feature_analyzer    = FeatureAnalyzer()
+    feature_preprocessor    = FeaturePreprocessor()
     stock_scraper       = StockDataScraper()
     stock_analyzer      = StockAnalysis()
     target_scraper      = TargetScraper()
@@ -24,9 +24,11 @@ def main():
     # Feature Scraper #
     ###################
     
-    num_weeks = 5 * 12 * 4
+    num_weeks = 4 # short test run
+    # num_weeks = 5 * 12 * 4
+    
     features_df = feature_scraper.run(num_weeks, train=True)
-    features_df_preprocessed = feature_analyzer.run(features_df, train=True)
+    features_df_preprocessed = feature_preprocessor.run(features_df, train=True)
     
     #################
     # Stock Scraper #

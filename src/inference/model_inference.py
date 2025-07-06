@@ -2,6 +2,7 @@ import os
 import joblib
 import pandas as pd
 from ast import literal_eval
+from sklearn.base import is_classifier
 
 from src.inference.utils.model_inference_helpers import load_feature_data
 
@@ -61,20 +62,31 @@ class ModelInference:
 
 
     def run_inference(self, target) -> pd.DataFrame:
-        # pick off exactly the columns the model saw
+        """
+        Run inference using the loaded models on filtered data.
+        Supports both classifiers (using predict_proba) and regressors (using predict).
+        """
         X = self.data[self.selected_features]
-        preds = [m.predict_proba(X)[:, 1] for m in self.models.values()]
+
+        preds = []
+        for name, model in self.models.items():
+            if is_classifier(model):
+                pred = model.predict_proba(X)[:, 1]
+            else:
+                pred = model.predict(X)
+            preds.append(pred)
+
         avg_pred = sum(preds) / len(preds)
 
         result = self.data[['Ticker', 'Filing Date']].copy()
         result[f'{target}_score'] = avg_pred
         return result
 
-    def save_output(self, result_df, target):
+    def save_output(self, result_df):
         os.makedirs(self.output_dir, exist_ok=True)
         result_df.to_excel(self.out_path, index=False)
 
-    def run(self, features_df, models, targets):
+    def run(self, features_df, models, targets, save_out):
         """
         Full pipeline: load models, features, data, filter, infer, save.
         """
@@ -89,6 +101,8 @@ class ModelInference:
                 self.load_feature_selection(target)
                 self.filter_features()
                 result_df = self.run_inference(target)
-                self.out_path = os.path.join(self.output_dir, f'{target}_inference_output.xlsx')
-                self.save_output(result_df, target)
-                print(f"Inference results saved to {self.out_path}")
+                if save_out: 
+                    self.out_path = os.path.join(self.output_dir, f'{target}_inference_output.xlsx')
+                    self.save_output(result_df)
+                    print(f"Inference results saved to {self.out_path}")
+        return result_df
