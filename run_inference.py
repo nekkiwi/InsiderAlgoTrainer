@@ -26,7 +26,7 @@ def main():
     
     models  = ['RandomForestOverSample']
     targets = ['final_return_1m_raw']
-    model_inference.run(current_features_df_preprocessed, models, targets)
+    model_inference.run(current_features_df_preprocessed, models, targets, save_out=True)
     
 if __name__ == "__main__":
     main()
