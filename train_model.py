@@ -7,22 +7,26 @@ def main():
     ###################
     
     feature_selector    = FeatureSelector()
+    model_trainer       = ModelTrainer()
     
-    features_df_filtered    = None
-    targets_df              = None
+    selected_features       = None
+    
+    #####################
+    # Feature Selection #
+    #####################
+
+    # selected_features = feature_selector.run(p_threshold=0.05)
     
     ############
     # Training #
     ############
-
-    selected_features = feature_selector.run(features_df_filtered, targets_df, p_threshold=0.05)
     
-    models  = ['RandomForestOverSample']
-    targets = ['final_return_1m_raw']
+    models      = ["RandomForestOverSample"]
+    timepoints  = ["1w", "2w", "3w", "6w", "2m"]
+    metrics     = ["return"]
 
     for model in models: 
-        for target in targets:
-            ModelTrainer().run(target, model, selected_features, features_df_filtered, targets_df)
+        model_trainer.run(model, timepoints, metrics)
 
 if __name__ == "__main__":
     main()

@@ -96,21 +96,28 @@ def create_heatmap(selected_features_dict, key, output_dir, p_threshold):
         df = pd.concat(data, axis=1).T
 
         # Calculate figure height dynamically based on the number of rows (lim/stop combinations)
-        n_combinations = len(df)
-        cell_height = 0.5  # Height per row
-        height = n_combinations * cell_height
-
-        plt.figure(figsize=(60, height))
+        n_rows, n_cols = df.shape
+        cell_height = 0.5
+        cell_width  = 1.0
+        height = max(4, n_rows * cell_height)
+        width  = max(6, n_cols * cell_width)
+        fig, ax = plt.subplots(figsize=(width, height))
         if key == 'p_values':
-            sns.heatmap(df, annot=True, fmt=".3f", cmap="coolwarm", cbar=True, linewidths=0.5, vmin=0, vmax=p_threshold)
-        plt.xticks(rotation=90, ha='center')
-        plt.yticks(rotation=0)
-        heatmap_path = os.path.join(output_dir, f"{key}_heatmap.png")
-        plt.savefig(heatmap_path, dpi=300)
-        plt.close()
-        print(f"- Heatmap saved to {heatmap_path}")
-    else:
-        print(f"- No valid data found for {key}. Skipping heatmap creation.")
+            sns.heatmap(df, annot=True, fmt=".3f", cmap="coolwarm",
+                        cbar=True, linewidths=0.5, vmin=0, vmax=p_threshold, ax=ax)
+        else:
+            sns.heatmap(df, annot=True, fmt=".2f", cmap="viridis",
+                        cbar=True, linewidths=0.5, ax=ax)
+
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='center')
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+        plt.tight_layout()
+
+        os.makedirs(output_dir, exist_ok=True)
+        out_path = os.path.join(output_dir, f"{key}_heatmap.png")
+        fig.savefig(out_path, dpi=300)
+        plt.close(fig)
+        print(f"- Heatmap saved to {out_path}")
 
 
 def process_sheet_data(targets_df, X_encoded):

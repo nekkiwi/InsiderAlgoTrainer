@@ -11,14 +11,11 @@ from sklearn.model_selection import cross_val_predict, StratifiedKFold, KFold, c
 from tqdm import tqdm
 import joblib  # To save models
 
-def load_data(features_file, targets_file, selected_features_file, target_name):
-    """Load the data from Excel files."""
-    target_name_clean = target_name.replace(" ", "-").lower()
+def load_data(features_file, targets_file):
+    """Load features and all target sheets from Excel files."""
     features_df = pd.read_excel(features_file)
     targets_df = pd.read_excel(targets_file, sheet_name=None)
-    selected_features_df = pd.read_excel(selected_features_file, sheet_name=target_name_clean)
-    
-    return features_df, targets_df, selected_features_df
+    return features_df, targets_df
 
 
 def train_model_task_wrapper(args):
@@ -191,30 +188,30 @@ def save_results(results, output_dir, model_type, target_name):
         print(f"- Training statistics saved to {stats_file}")
 
 def save_predictions(all_predictions, predictions_dir, model_short, target_name, features_df):
-    """Save predictions to a single Excel sheet, combining all limit/stop results."""
     model_subdir = os.path.join(predictions_dir, model_short.lower())
     os.makedirs(model_subdir, exist_ok=True)
 
-    combined_predictions = None
-    ticker_date_columns = ["Ticker", "Filing Date"]
+    combined = None
+    key_cols = ["Ticker", "Filing Date"]
 
     for pred_data in all_predictions:
         df = pred_data["Predictions"]
+        # drop rows where every prediction column is NaN
+        df = df.dropna(how="all", subset=[c for c in df.columns if c.startswith("Pred_")])
+        if df.empty:
+            continue
 
-        # Concatenate with existing predictions
-        if combined_predictions is None:
-            # Add Ticker and Filing Date once at the beginning
-            combined_predictions = pd.concat([features_df[ticker_date_columns], df], axis=1)
+        if combined is None:
+            combined = pd.concat([features_df[key_cols], df], axis=1)
         else:
-            combined_predictions = pd.concat([combined_predictions, df], axis=1)
+            combined = pd.concat([combined, df], axis=1)
 
-    prediction_file = os.path.join(model_subdir, f'pred_{model_short.lower()}_{target_name}.xlsx')
+    out_path = os.path.join(model_subdir, f'pred_{model_short.lower()}_{target_name}.xlsx')
+    with pd.ExcelWriter(out_path, engine='openpyxl') as writer:
+        combined.to_excel(writer, sheet_name=target_name, index=False)
 
-    # Save all the combined predictions into a single file
-    with pd.ExcelWriter(prediction_file, engine='openpyxl') as writer:
-        combined_predictions.to_excel(writer, sheet_name=target_name, index=False)
+    print(f"- Predictions saved to {out_path}")
 
-    print(f"- Predictions saved to {prediction_file}")
 
 
 def save_model(model, model_path):

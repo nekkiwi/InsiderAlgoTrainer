@@ -27,15 +27,15 @@ def main():
     num_weeks = 4 # short test run
     # num_weeks = 5 * 12 * 4
     
-    features_df = feature_scraper.run(num_weeks, train=True)
-    features_df_preprocessed = feature_preprocessor.run(features_df, train=True)
+    # features_df = feature_scraper.run(num_weeks, train=True)
+    # features_df_preprocessed = feature_preprocessor.run(features_df, train=True)
     
     #################
     # Stock Scraper #
     #################
     
-    features_df_filtered, return_df, alpha_df = stock_scraper.run(features_df_preprocessed)
-    stock_analyzer.run(return_df, alpha_df)
+    # features_df_filtered, return_df, alpha_df = stock_scraper.run(features_df_preprocessed)
+    # stock_analyzer.run(return_df, alpha_df)
     
     ##################
     # Target Scraper #

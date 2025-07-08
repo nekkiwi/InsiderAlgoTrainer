@@ -239,13 +239,19 @@ def calculate_thresholds(combinations):
         df_pred['Filing Date'] = pd.to_datetime(df_pred['Filing Date'], dayfirst=True)
 
         # Choose return sheet based on frequency in target
-        if '1w' in target:
+        if '1d' in target:
+            return_sheet = 'final_return_1d_raw'
+            alpha_sheet = 'final_alpha_1d_raw'
+        elif '2d' in target:
+            return_sheet = 'final_return_1d_raw'
+            alpha_sheet = 'final_alpha_1d_raw'
+        elif '1w' in target:
             return_sheet = 'final_return_1w_raw'
             alpha_sheet = 'final_alpha_1w_raw'
-        if '2w' in target:
+        elif '2w' in target:
             return_sheet = 'final_return_2w_raw'
             alpha_sheet = 'final_alpha_2w_raw'
-        if '3w' in target:
+        elif '3w' in target:
             return_sheet = 'final_return_3w_raw'
             alpha_sheet = 'final_alpha_3w_raw'
         elif '1m' in target:
@@ -379,7 +385,7 @@ def calculate_thresholds(combinations):
 
 def print_best_thresholds(summary_df, inv_per_week = 7):
     # Set your minimum‐investments filter
-    min_investments = 5*12*4*inv_per_week # on once a day on average (not really because lots of data is lost so way less probably) (data is over 5 years)
+    min_investments = 12*4*inv_per_week # on once a day on average (not really because lots of data is lost so way less probably) (data is over 5 years)
 
     # Filter out any rows with too few picks
     filtered = summary_df[summary_df['Num Investments'] > min_investments]
