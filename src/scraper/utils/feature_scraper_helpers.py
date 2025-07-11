@@ -145,25 +145,23 @@ def _robust_get(url, max_retries=3, backoff_factor=0.5, timeout=10):
                 print(f"Failed to fetch {url} after {max_retries} attempts: {e}")
                 return None
 
-def get_recent_trades(ticker):
+def get_recent_trades(ticker: str, filing_date: pd.Timestamp):
     """
-    Scrapes recent insider trades for a given ticker using robust network requests.
+    Scrapes recent insider trades for a given ticker relative to a specific
+    historical filing date.
     """
     url = f"http://openinsider.com/{ticker}"
     try:
-        # Use the robust helper function to make the request
         response = _robust_get(url)
-        if response is None:
-            return None  # Skip if the request ultimately fails
+        if response is None: return None
 
         soup = BeautifulSoup(response.content, 'html.parser')
         table = soup.find('table', {'class': 'tinytable'})
-        if not table:
-            return None
+        if not table: return None
             
-        rows = table.find_all('tr')[1:]  # Skip header row
+        rows = table.find_all('tr')[1:]
 
-        # Initialize counters for different time windows
+        # Counters remain the same
         num_purchases_month, num_sales_month = 0, 0
         total_value_purchases_month, total_value_sales_month = 0, 0
         num_purchases_quarter, num_sales_quarter = 0, 0
@@ -171,17 +169,24 @@ def get_recent_trades(ticker):
 
         for row in rows:
             cells = row.find_all('td')
-            if len(cells) < 12: continue # Ensure row has enough cells
+            if len(cells) < 12: continue
             
             trade_type = cells[6].text.strip()
             trade_date = pd.to_datetime(cells[1].text.strip())
+            
+            # --- THE CRITICAL FIX IS HERE ---
+            # We only consider trades that happened ON OR BEFORE the historical filing_date
+            if trade_date > filing_date:
+                continue
+
             value_str = cells[11].text.strip().replace('$', '').replace(',', '')
             if not value_str: continue
-            
             value = float(value_str)
-            days_since_trade = (pd.Timestamp.now() - trade_date).days
+            
+            # Replace pd.Timestamp.now() with the passed-in filing_date
+            days_since_trade = (filing_date - trade_date).days
 
-            # Aggregate data for the last month
+            # Aggregate data for the last month (30 days prior to the filing_date)
             if days_since_trade <= 30:
                 if 'Purchase' in trade_type:
                     num_purchases_month += 1
@@ -190,7 +195,7 @@ def get_recent_trades(ticker):
                     num_sales_month += 1
                     total_value_sales_month += value
             
-            # Aggregate data for the last quarter
+            # Aggregate data for the last quarter (90 days prior to the filing_date)
             if days_since_trade <= 90:
                 if 'Purchase' in trade_type:
                     num_purchases_quarter += 1
@@ -198,7 +203,8 @@ def get_recent_trades(ticker):
                 elif 'Sale' in trade_type:
                     num_sales_quarter += 1
                     total_value_sales_quarter += value
-
+        
+        # The return dictionary remains the same
         return {
             'num_purchases_month': num_purchases_month,
             'num_sales_month': num_sales_month,

@@ -96,8 +96,8 @@ def calculate_financial_ratios(data):
 
 def process_single_ticker(row, tk_objects, hist_data):
     """
-    Worker function to process a single ticker-date combination using only
-    pre-fetched data. This version includes a check for valid historical data.
+    Worker function to process a single ticker-date combination, now with
+    point-in-time calculations for all time-varying metrics to prevent leakage.
     """
     ticker = row['Ticker']
     filing_date = row['Filing Date']
@@ -105,36 +105,72 @@ def process_single_ticker(row, tk_objects, hist_data):
     try:
         t_obj = tk_objects.tickers.get(ticker)
         t_info = t_obj.info if hasattr(t_obj, 'info') else {}
-        if not t_info:
-            return None
+        if not t_info: return None
 
+        # Helper to get the latest financial statement before the filing date.
         def pick_latest(stmt_df):
             if stmt_df is None or stmt_df.empty: return None
             stmt_df.columns = pd.to_datetime(stmt_df.columns).tz_localize(None)
             valid_cols = stmt_df.columns[stmt_df.columns <= filing_date]
             return stmt_df.loc[:, valid_cols.max()] if not valid_cols.empty else None
 
+        # Get the point-in-time financial statements (your existing logic is correct)
+        balance_sheet = pick_latest(t_obj.balance_sheet)
+        cash_flow = pick_latest(t_obj.cashflow)
+        income_statement = pick_latest(t_obj.financials)
+        if balance_sheet is None or income_statement is None: return None
+
+        # Filter market data to only include dates up to the filing date
         market_data = hist_data.get(ticker)
-        if market_data is None or market_data['Close'].isnull().all():
-            return None
-        
+        if market_data is None: return None
         market_data.index = market_data.index.tz_localize(None)
-        
         market_data_filtered = market_data.loc[market_data.index <= filing_date]
         if market_data_filtered.empty: return None
-        latest_market_data = market_data_filtered.iloc[-1]
 
+        # --- POINT-IN-TIME METRIC CALCULATION ---
+
+        # 1. Get the latest market data available as of the filing date
+        latest_market_data = market_data_filtered.iloc[-1]
+        current_price = latest_market_data.get('Close')
+        if pd.isna(current_price): return None
+
+        # 2. Calculate 52-Week High/Low
+        # Define the 52-week window ending on the filing date
+        one_year_prior = filing_date - pd.Timedelta(days=365)
+        historical_window = market_data_filtered.loc[market_data_filtered.index >= one_year_prior]
+        high_52_week = historical_window['High'].max()
+        low_52_week = historical_window['Low'].min()
+        
+        # 3. Calculate Market Cap
+        # Get shares outstanding from the latest balance sheet
+        shares_outstanding = balance_sheet.get('Share Issued') # Use 'Share Issued' or 'Total Stockholder Equity' based on availability
+        if pd.isna(shares_outstanding):
+            shares_outstanding = t_info.get('sharesOutstanding') # Fallback to info, less ideal but better than nothing
+        
+        market_cap = current_price * shares_outstanding if pd.notna(shares_outstanding) else None
+
+        # 4. Calculate Beta (simplified example, a robust version needs index data)
+        # This requires comparing stock returns to market (e.g., SPY) returns.
+        # For simplicity, we will use the 'beta' from .info as a placeholder, but
+        # acknowledge this is still a minor leak. A full fix requires more data.
+        beta = t_info.get('beta')
+        
+        # 5. Get EPS (use data from financial statements, not 'trailingEps')
+        # Here we use 'Diluted EPS' from the latest income statement
+        eps = income_statement.get('Diluted EPS')
+
+        # --- Build the new, point-in-time data payload ---
         data_payload = {
-            'balance_sheet': pick_latest(t_obj.balance_sheet),
-            'cash_flow': pick_latest(t_obj.cashflow),
-            'income_statement': pick_latest(t_obj.financials),
-            'market_cap': t_info.get('marketCap'),
-            'sector': t_info.get('sector'),
-            'eps': t_info.get('trailingEps'),
-            'beta': t_info.get('beta'),
-            'high_52_week': t_info.get('fiftyTwoWeekHigh'),
-            'low_52_week': t_info.get('fiftyTwoWeekLow'),
-            'current_price': latest_market_data.get('Close')
+            'balance_sheet': balance_sheet,
+            'cash_flow': cash_flow,
+            'income_statement': income_statement,
+            'market_cap': market_cap,
+            'high_52_week': high_52_week,
+            'low_52_week': low_52_week,
+            'current_price': current_price,
+            'eps': eps,
+            'beta': beta, # Acknowledged placeholder
+            'sector': t_info.get('sector') # Sector is static, so this is safe
         }
         
         ratios = calculate_financial_ratios(data_payload)
@@ -143,25 +179,11 @@ def process_single_ticker(row, tk_objects, hist_data):
             ratios['Ticker'] = ticker
             ratios['Filing Date'] = filing_date
             
-            # --- Definitive IPO Date Logic ---
-            ipo_date = None
-
-            # 1. Primary Method: Use the 'info' object for the most reliable date.
-            #    'firstTradeDateEpochUtc' is a Unix timestamp.
+            # Your existing IPO date logic is robust and can remain
             ipo_timestamp_epoch = t_info.get('firstTradeDateEpochUtc')
-            if ipo_timestamp_epoch:
-                ipo_date = pd.to_datetime(ipo_timestamp_epoch, unit='s')
-
-            # 2. Fallback Method: If metadata fails, use the first valid trade date.
-            if pd.isna(ipo_date):
-                ipo_date = market_data['Close'].first_valid_index()
-
-            # 3. Final Validation: Ensure the date is plausible (e.g., after 1990).
-            #    This check will eliminate the anomalous old dates.
-            if pd.isna(ipo_date) or ipo_date.year < 1990:
-                return None
-
-            # Normalize dates to midnight to ensure an accurate day count
+            ipo_date = pd.to_datetime(ipo_timestamp_epoch, unit='s') if ipo_timestamp_epoch else market_data['Close'].first_valid_index()
+            if pd.isna(ipo_date) or ipo_date.year < 1990: return None
+            
             filing_date_naive = filing_date.normalize()
             ipo_date_naive = ipo_date.normalize()
             ratios['Days_Since_IPO'] = (filing_date_naive - ipo_date_naive).days
@@ -171,6 +193,7 @@ def process_single_ticker(row, tk_objects, hist_data):
     except Exception:
         return None
     return None
+
 
 def batch_fetch_financial_data(df, max_workers=8):
     """

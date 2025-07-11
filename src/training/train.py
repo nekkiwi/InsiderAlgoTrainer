@@ -6,9 +6,10 @@ from datetime import timedelta
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import KFold
 import itertools
 from tqdm import tqdm
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import TimeSeriesSplit
 
 # --- Import the new feature selection helper ---
 from src.training.utils.feature_selector_helpers import select_features_for_fold
@@ -78,32 +79,50 @@ class ModelTrainer:
         all_fold_results = []
         all_combinations = list(itertools.product(seeds, timepoints, thresholds))
 
+        # Helper to identify continuous features (can be more sophisticated)
+        # This assumes your binary/categorical features are already encoded as 0/1
+        all_feature_names = self.features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore').columns.tolist()
+        continuous_features = [f for f in all_feature_names if self.features_df[f].nunique() > 2]
+
+        # ... loop over strategies ...
         for seed, tp, thresh_pct in tqdm(all_combinations, desc="Processing Strategies"):
-            # 1. Prepare data for the strategy with ALL features
             X, y_binary, y_continuous = self._prepare_strategy_data(category, tp, thresh_pct)
             if X is None: continue
 
-            kf = KFold(n_splits=n_splits, shuffle=False)
+            tscv = TimeSeriesSplit(n_splits=n_splits)
             fold_count = 0
 
-            for train_val_indices, test_indices in kf.split(X):
+            for train_val_indices, test_indices in tscv.split(X):
                 fold_count += 1
                 val_size = int(len(train_val_indices) * 0.2)
                 train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
 
-                # Split data for the current fold
-                X_tr, y_bin_tr = X.iloc[train_indices], y_binary.iloc[train_indices]
-                X_val, y_cont_val = X.iloc[val_indices], y_continuous.iloc[val_indices]
-                X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices], y_binary.iloc[test_indices], y_continuous.iloc[test_indices]
+                X_tr, y_bin_tr = X.iloc[train_indices].copy(), y_binary.iloc[train_indices].copy()
+                X_val, y_cont_val = X.iloc[val_indices].copy(), y_continuous.iloc[val_indices].copy()
+                X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices].copy(), y_binary.iloc[test_indices].copy()
+                y_cont_tr = y_continuous.iloc[train_indices].copy()
 
-                # 2. Perform feature selection USING ONLY THE TRAINING DATA FOR THIS FOLD
-                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
+                # --- 2. POINT-IN-TIME SCALING ---
+                # Clipping is also a form of fitting, so it must be done on the training set.
+                for col in continuous_features:
+                    lower_bound = X_tr[col].quantile(0.01)
+                    upper_bound = X_tr[col].quantile(0.99)
+                    X_tr[col] = X_tr[col].clip(lower_bound, upper_bound)
+                    X_val[col] = X_val[col].clip(lower_bound, upper_bound)
+                    X_ts[col] = X_ts[col].clip(lower_bound, upper_bound)
+
+                # Now, scale the data
+                scaler = MinMaxScaler()
+                # Fit the scaler ONLY on the training data's continuous features
+                X_tr[continuous_features] = scaler.fit_transform(X_tr[continuous_features])
+                # Use the FITTED scaler to transform validation and test sets
+                X_val[continuous_features] = scaler.transform(X_val[continuous_features])
+                X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
                 
-                if not selected_features:
-                    print(f"Fold {fold_count}: No features selected. Skipping.")
-                    continue
+                # --- 3. FEATURE SELECTION (Your existing correct logic) ---
+                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
+                if not selected_features: continue
 
-                # 3. Use the selected features to train and evaluate
                 X_tr_sel = X_tr[selected_features]
                 X_val_sel = X_val[selected_features]
                 X_ts_sel = X_ts[selected_features]
