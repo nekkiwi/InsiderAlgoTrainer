@@ -145,7 +145,7 @@ def process_single_ticker(row, tk_objects, hist_data):
         # Get shares outstanding from the latest balance sheet
         shares_outstanding = balance_sheet.get('Share Issued') # Use 'Share Issued' or 'Total Stockholder Equity' based on availability
         if pd.isna(shares_outstanding):
-            shares_outstanding = t_info.get('sharesOutstanding') # Fallback to info, less ideal but better than nothing
+            return None
         
         market_cap = current_price * shares_outstanding if pd.notna(shares_outstanding) else None
 

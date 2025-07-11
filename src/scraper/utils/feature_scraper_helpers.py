@@ -144,6 +144,12 @@ def _robust_get(url, max_retries=3, backoff_factor=0.5, timeout=10):
                 # Log the final failure and return None
                 print(f"Failed to fetch {url} after {max_retries} attempts: {e}")
                 return None
+            
+def get_recent_trades_star(args):
+    """
+    Helper function to unpack arguments for use with pool.imap.
+    """
+    return get_recent_trades(*args)
 
 def get_recent_trades(ticker: str, filing_date: pd.Timestamp):
     """
@@ -174,7 +180,6 @@ def get_recent_trades(ticker: str, filing_date: pd.Timestamp):
             trade_type = cells[6].text.strip()
             trade_date = pd.to_datetime(cells[1].text.strip())
             
-            # --- THE CRITICAL FIX IS HERE ---
             # We only consider trades that happened ON OR BEFORE the historical filing_date
             if trade_date > filing_date:
                 continue

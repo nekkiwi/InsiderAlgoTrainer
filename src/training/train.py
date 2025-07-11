@@ -75,16 +75,14 @@ class ModelTrainer:
         start_time = time.time()
         print(f"\n### START ### {model_type} Walk-Forward with In-Loop Feature Selection ###")
         self.load_data()
+        
+        # Helper to identify continuous features
+        all_feature_names = self.features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore').columns.tolist()
+        continuous_features = [f for f in all_feature_names if self.features_df[f].nunique() > 2]
 
         all_fold_results = []
         all_combinations = list(itertools.product(seeds, timepoints, thresholds))
 
-        # Helper to identify continuous features (can be more sophisticated)
-        # This assumes your binary/categorical features are already encoded as 0/1
-        all_feature_names = self.features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore').columns.tolist()
-        continuous_features = [f for f in all_feature_names if self.features_df[f].nunique() > 2]
-
-        # ... loop over strategies ...
         for seed, tp, thresh_pct in tqdm(all_combinations, desc="Processing Strategies"):
             X, y_binary, y_continuous = self._prepare_strategy_data(category, tp, thresh_pct)
             if X is None: continue
@@ -97,25 +95,27 @@ class ModelTrainer:
                 val_size = int(len(train_val_indices) * 0.2)
                 train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
 
+                # Explicitly copy to avoid SettingWithCopyWarning
                 X_tr, y_bin_tr = X.iloc[train_indices].copy(), y_binary.iloc[train_indices].copy()
                 X_val, y_cont_val = X.iloc[val_indices].copy(), y_continuous.iloc[val_indices].copy()
                 X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices].copy(), y_binary.iloc[test_indices].copy()
                 y_cont_tr = y_continuous.iloc[train_indices].copy()
 
-                # --- 2. POINT-IN-TIME SCALING ---
-                # Clipping is also a form of fitting, so it must be done on the training set.
+                # --- 2. POINT-IN-TIME SCALING AND CLIPPING ---
+                # First, clip outliers based on the training set's distribution
                 for col in continuous_features:
                     lower_bound = X_tr[col].quantile(0.01)
                     upper_bound = X_tr[col].quantile(0.99)
-                    X_tr[col] = X_tr[col].clip(lower_bound, upper_bound)
-                    X_val[col] = X_val[col].clip(lower_bound, upper_bound)
-                    X_ts[col] = X_ts[col].clip(lower_bound, upper_bound)
+                    X_tr[col].clip(lower_bound, upper_bound, inplace=True)
+                    X_val[col].clip(lower_bound, upper_bound, inplace=True)
+                    X_ts[col].clip(lower_bound, upper_bound, inplace=True)
 
-                # Now, scale the data
+                # Next, scale the data using parameters from the training set
                 scaler = MinMaxScaler()
-                # Fit the scaler ONLY on the training data's continuous features
-                X_tr[continuous_features] = scaler.fit_transform(X_tr[continuous_features])
-                # Use the FITTED scaler to transform validation and test sets
+                # Fit the scaler ONLY on the training data
+                scaler.fit(X_tr[continuous_features])
+                # Use the FITTED scaler to transform all data splits
+                X_tr[continuous_features] = scaler.transform(X_tr[continuous_features])
                 X_val[continuous_features] = scaler.transform(X_val[continuous_features])
                 X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
                 

@@ -143,10 +143,16 @@ class FeatureScraper:
     def add_insider_transactions(self, drop_threshold=0.05):
         rows = self.data.to_dict('records')
         
-        # Fetch insider transactions
-        with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(get_recent_trades, [row['Ticker'] for row in rows]), total=len(rows), desc="- Scraping recent insider trades"))
+        tasks = [
+            (row['Ticker'], row['Filing Date']) 
+            for row in rows
+        ]
         
+        with Pool(os.cpu_count()) as pool: # Using a reduced number of workers
+            # We call pool.imap with our new helper function, get_recent_trades_star.
+            # tqdm can now correctly iterate as each task is completed.
+            processed_rows = list(tqdm(pool.imap(get_recent_trades_star, tasks, chunksize=1), total=len(tasks), desc="- Scraping recent insider trades"))
+                
         for row, trade_data in zip(rows, processed_rows):
             if trade_data:
                 row.update(trade_data)
