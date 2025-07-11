@@ -1,164 +1,177 @@
-import pandas as pd
-from sklearn.feature_selection import f_classif, chi2, f_regression
+# In src/analysis/utils/feature_selector_helpers.py
+
 import os
+import re
+import pandas as pd
 import seaborn as sns
-from matplotlib import pyplot as plt
-from src.scraper.utils.feature_preprocess_helpers import identify_feature_types
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
 
+def select_features_for_fold(X_train: pd.DataFrame, y_binary_train: pd.Series, top_n: int) -> list:
+    """
+    Selects top features using a RandomForestClassifier on a given training set.
+    This is designed to be run INSIDE a cross-validation or walk-forward fold.
 
-def select_features(X, y, p_threshold=0.1):
-    """Select features based on the type of the target and feature types."""
-    categorical_features, _ = identify_feature_types(X)
+    Args:
+        X_train (pd.DataFrame): Feature data for the training fold.
+        y_binary_train (pd.Series): Binary target data for the training fold.
+        top_n (int): The number of top features to select.
 
-    scores = pd.Series(index=X.columns, dtype=float)
-    p_values = pd.Series(index=X.columns, dtype=float)
+    Returns:
+        list: A list of the names of the top_n selected features.
+    """
+    # Ensure there's enough data to train
+    if y_binary_train.nunique() < 2 or y_binary_train.value_counts().min() < 5:
+        print("[WARN] Not enough data in a minority class for feature selection in this fold. Skipping.")
+        return []
+
+    # Using a simple, fast model for selection
+    model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, n_jobs=-1)
+    model.fit(X_train, y_binary_train)
+
+    importances = pd.Series(model.feature_importances_, index=X_train.columns)
     
-    for feature in X.columns:
-        if feature in categorical_features:
-            if y.nunique() <= 2:  # Binary target (categorical)
-                score, p_value = chi2(X[[feature]], y)
-            else:  # Continuous target
-                score, p_value = f_regression(X[[feature]], y)
-        else:
-            if y.nunique() <= 2:  # Binary target (categorical)
-                score, p_value = f_classif(X[[feature]], y)
-            else:  # Continuous target
-                score, p_value = f_regression(X[[feature]], y)
-        
-        scores[feature] = score[0]  # Extract the first element since score is a 1D array
-        p_values[feature] = p_value[0]  # Extract the first element since p_value is a 1D array
+    # Filter for features that have some importance
+    non_zero_importances = importances[importances > 0]
+    if non_zero_importances.empty:
+        return []
 
-    # Filter features based on p-value threshold
-    selected_features = p_values[p_values < p_threshold].index.tolist()
-
-    return selected_features, scores, p_values
-
-
-def save_selected_features(selected_features_dict, output_dir):
-    """Save selected features from all sheets into a single Excel file with multiple sheets."""
-    import pandas as pd  # Ensure pandas is imported
-    from openpyxl import Workbook  # Ensure openpyxl is available
-
-    excel_path = os.path.join(output_dir, "selected_features.xlsx")
+    # Select the top N features
+    top_features = non_zero_importances.nlargest(top_n)
     
-    if not selected_features_dict:
-        print("- No features were selected. Skipping save.")
+    return top_features.index.tolist()
+
+def get_sorted_strategy_keys(strategy_keys: list) -> list:
+    """
+    Sorts strategy keys chronologically by time horizon (1d, 1w, 1m),
+    then by threshold.
+    """
+    def sort_key(key):
+        match = re.search(r'_((\d+)([dmwy]))_binary_(\d+)pct', key)
+        if match:
+            horizon, num_str, unit, threshold_str = match.groups()
+            num = int(num_str)
+            threshold = int(threshold_str)
+            # Define a multiplier for each time unit to create a comparable value
+            unit_multiplier = {'d': 1, 'w': 7, 'm': 30, 'y': 365}
+            time_value = num * unit_multiplier.get(unit, 0)
+            return (time_value, threshold)
+        return (float('inf'), 0) # Fallback for non-matching keys
+
+    return sorted(strategy_keys, key=sort_key)
+
+def select_features_with_model(features_df, targets_df_dict, raw_target_name, threshold_pct, top_n):
+    """
+    Selects features by dynamically creating a binary target from a raw continuous target.
+    """
+    if raw_target_name not in targets_df_dict:
+        return [], None
+    X = features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore')
+    y_raw_df = targets_df_dict[raw_target_name]
+    merged_data = pd.merge(features_df, y_raw_df, on=['Ticker', 'Filing Date'], how='inner')
+    if merged_data.empty or raw_target_name not in merged_data.columns:
+        return [], None
+    y_binary = (merged_data[raw_target_name] >= (threshold_pct / 100.0)).astype(int)
+    y_binary.dropna(inplace=True)
+    X_aligned = merged_data.loc[y_binary.index, X.columns]
+    if y_binary.nunique() < 2 or y_binary.value_counts().min() < 5:
+        return [], None
+    model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, n_jobs=-1)
+    model.fit(X_aligned, y_binary)
+    importances = pd.Series(model.feature_importances_, index=X_aligned.columns)
+    non_zero_importances = importances[importances > 0]
+    if non_zero_importances.empty:
+        return [], None
+    top_features = non_zero_importances.nlargest(top_n)
+    return top_features.index.tolist(), top_features
+
+def save_feature_selection_results(all_scores: dict, output_dir: str):
+    """
+    Saves feature selection results into a single Excel file with
+    separate sheets for 'return' and 'alpha' features.
+    """
+    output_file = os.path.join(output_dir, "all_selected_features.xlsx")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    return_scores = {k: v for k, v in all_scores.items() if k.startswith('return')}
+    alpha_scores = {k: v for k, v in all_scores.items() if k.startswith('alpha')}
+
+    with pd.ExcelWriter(output_file) as writer:
+        if return_scores:
+            sorted_return_keys = get_sorted_strategy_keys(list(return_scores.keys()))
+            return_df = pd.DataFrame()
+            for key in sorted_return_keys:
+                df = return_scores[key].reset_index().rename(columns={'index': 'Feature', 0: key})
+                return_df = pd.merge(return_df, df, on='Feature', how='outer') if not return_df.empty else df
+            return_df.fillna(0, inplace=True)
+            return_df.to_excel(writer, sheet_name='Return_Features', index=False)
+            print("- Return feature importances saved to 'Return_Features' sheet.")
+
+        if alpha_scores:
+            sorted_alpha_keys = get_sorted_strategy_keys(list(alpha_scores.keys()))
+            alpha_df = pd.DataFrame()
+            for key in sorted_alpha_keys:
+                df = alpha_scores[key].reset_index().rename(columns={'index': 'Feature', 0: key})
+                alpha_df = pd.merge(alpha_df, df, on='Feature', how='outer') if not alpha_df.empty else df
+            alpha_df.fillna(0, inplace=True)
+            alpha_df.to_excel(writer, sheet_name='Alpha_Features', index=False)
+            print("- Alpha feature importances saved to 'Alpha_Features' sheet.")
+            
+    print(f"\n- Consolidated feature importance table saved to: {output_file}")
+
+def create_feature_heatmap(scores: dict, category: str, output_dir: str):
+    """
+    Creates a consolidated heatmap where only selected features (those with
+    non-zero importance) are colored.
+    """
+    if not scores:
+        print(f"[INFO] No scores provided for '{category}' heatmap. Skipping.")
         return
     
-    # Initialize Excel writer
-    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-        for sheet_name, selections in selected_features_dict.items():
-            if not selections:
-                print(f"- No selections for sheet {sheet_name}. Skipping.")
-                continue
-            
-            # Convert list of dicts to DataFrame
-            df = pd.DataFrame(selections)
-            
-            # Check if 'Limit' and 'Stop' columns exist
-            if 'Limit' in df.columns and 'Stop' in df.columns:
-                
-                # Reorder columns to have 'Limit' and 'Stop' first
-                columns_order = ['Limit', 'Stop'] + [col for col in df.columns if col not in ['Limit', 'Stop']]
-                df = df[columns_order]
-            else:
-                print(f"- 'Limit' and 'Stop' columns not found in sheet {sheet_name}. Skipping.")
-                continue
-            
-            # Replace spaces and convert to lowercase for sheet naming
-            safe_sheet_name = sheet_name.replace(" ", "-").lower()
-            
-            # Write to the respective sheet
-            try:
-                df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
-            except Exception as e:
-                print(f"- Failed to write sheet '{safe_sheet_name}': {e}")
+    sorted_keys = get_sorted_strategy_keys(list(scores.keys()))
     
-    print(f"- Selected features saved to {excel_path}")
+    # Create the base DataFrame with all feature scores
+    heatmap_df = pd.concat(scores, axis=1).T.reindex(sorted_keys).dropna(how='all', axis=1).fillna(0)
+    
+    # Filter out features that were never selected in any strategy to keep the plot clean
+    heatmap_df = heatmap_df.loc[:, (heatmap_df != 0).any(axis=0)]
+    
+    if heatmap_df.empty:
+        print(f"[INFO] No features with non-zero importance found for '{category}' heatmap. Skipping.")
+        return
 
+    # --- THIS IS THE KEY CHANGE ---
+    # Replace all zero-importance scores with NaN (Not a Number).
+    # Seaborn's heatmap will render NaN values as blank (uncolored) cells,
+    # effectively hiding the non-selected features from the visualization.
+    heatmap_df.replace(0, np.nan, inplace=True)
 
+    # Normalize the remaining (non-NaN) scores to sum to 1 for better comparison
+    heatmap_df = heatmap_df.div(heatmap_df.sum(axis=1), axis=0)
 
+    # Plotting
+    plt.figure(figsize=(max(12, heatmap_df.shape[1] * 0.6), max(8, heatmap_df.shape[0] * 0.5)))
+    
+    # The heatmap will now only apply color to the cells that have a numeric value
+    sns.heatmap(
+        heatmap_df, 
+        annot=True, 
+        fmt=".2f", 
+        cmap="viridis", 
+        linewidths=.5, 
+        cbar=True
+    )
+    
+    plt.title(f'Selected Feature Importance for {category.title()} Targets', fontsize=16)
+    plt.ylabel('Target Strategy', fontsize=12)
+    plt.xlabel('Features', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.tight_layout()
 
-def create_heatmap(selected_features_dict, key, output_dir, p_threshold):
-    """Create and save a heatmap of either scores or p-values."""
-    data = []
-
-    for sheet_name, selections in selected_features_dict.items():
-        for selection in selections:
-            values = selection[key]
-            if isinstance(values, float):
-                values = [values]
-
-            series = pd.Series(values, index=selection['Selected Features'], name=f'{sheet_name}_{selection["Limit"]}_{selection["Stop"]}')
-            data.append(series)
-
-    if data:
-        df = pd.concat(data, axis=1).T
-
-        # Calculate figure height dynamically based on the number of rows (lim/stop combinations)
-        n_rows, n_cols = df.shape
-        cell_height = 0.5
-        cell_width  = 1.0
-        height = max(4, n_rows * cell_height)
-        width  = max(6, n_cols * cell_width)
-        fig, ax = plt.subplots(figsize=(width, height))
-        if key == 'p_values':
-            sns.heatmap(df, annot=True, fmt=".3f", cmap="coolwarm",
-                        cbar=True, linewidths=0.5, vmin=0, vmax=p_threshold, ax=ax)
-        else:
-            sns.heatmap(df, annot=True, fmt=".2f", cmap="viridis",
-                        cbar=True, linewidths=0.5, ax=ax)
-
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='center')
-        ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
-        plt.tight_layout()
-
-        os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, f"{key}_heatmap.png")
-        fig.savefig(out_path, dpi=300)
-        plt.close(fig)
-        print(f"- Heatmap saved to {out_path}")
-
-
-def process_sheet_data(targets_df, X_encoded):
-    """Process the targets dataframe to extract tasks for feature selection."""
-    tasks = []
-
-    # Ensure 'Ticker' and 'Filing Date' columns are available for merging
-    if 'Ticker' not in X_encoded.columns or 'Filing Date' not in X_encoded.columns:
-        raise KeyError("'Ticker' and 'Filing Date' must be present in features DataFrame to align with targets")
-
-    for sheet_name, sheet_data in targets_df.items():
-        # Ensure 'Filing Date' columns in both DataFrames are in datetime format
-        X_encoded['Filing Date'] = pd.to_datetime(X_encoded['Filing Date'], format='%d/%m/%Y %H:%M', errors='coerce')
-        sheet_data['Filing Date'] = pd.to_datetime(sheet_data['Filing Date'], format='%d/%m/%Y %H:%M', errors='coerce')
-
-        # Remove any rows where the Filing Date conversion failed (NaT values)
-        X_encoded.dropna(subset=['Filing Date'], inplace=True)
-        sheet_data.dropna(subset=['Filing Date'], inplace=True)
-
-        # Merge on Ticker and Filing Date to ensure consistency
-        merged_data = pd.merge(X_encoded, sheet_data, on=['Ticker', 'Filing Date'], how='inner')
-
-        if merged_data.empty:
-            continue  # Skip if there are no rows after merging
-
-        # Drop 'Ticker' and 'Filing Date' from features after merging
-        X_encoded_aligned = merged_data[X_encoded.columns.drop(['Ticker', 'Filing Date'])]
-
-        # Process each target column
-        for target_name in sheet_data.columns[2:]:  # Starting from the 3rd column (skip 'Ticker' and 'Filing Date')
-            try:
-                # Example column name: 'return_limit_sell (Limit 0.02 / Stop -0.16)'
-                limit_stop_info = target_name.split('(')[1].split(')')[0]  # Extract the 'Limit 0.02 / Stop -0.16' part
-                limit_value, stop_value = limit_stop_info.replace("Limit ", "").replace("Stop ", "").split(" / ")
-            except (IndexError, ValueError):
-                # If parsing fails, skip this target (e.g., static targets like 'pos_return', 'high_return')
-                limit_value, stop_value = None, None  # No dynamic target
-
-            y = merged_data[target_name]
-            non_empty_count = y.dropna().shape[0]
-            if non_empty_count > 0:  # Ensure the target column has valid data
-                tasks.append((limit_value, stop_value, target_name, y, X_encoded_aligned))
-
-    return tasks
+    out_path = os.path.join(output_dir, f"selected_{category}_feature_importance.png")
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    
+    print(f"- Selected feature importance heatmap for '{category}' saved to: {out_path}")

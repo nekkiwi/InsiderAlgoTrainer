@@ -119,57 +119,95 @@ def aggregate_group(df):
         TenPercent=('10%', 'max')).sort_values(by='Filing Date', ascending=False).reset_index()
     return df
 
+import requests
+import time
+import pandas as pd
+from bs4 import BeautifulSoup
+from requests.exceptions import RequestException
+
+def _robust_get(url, max_retries=3, backoff_factor=0.5, timeout=10):
+    """
+    Performs a GET request with a timeout and exponential backoff for retries.
+    """
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            # Raise an error for bad status codes (4xx or 5xx)
+            response.raise_for_status()
+            return response
+        except RequestException as e:
+            if attempt < max_retries - 1:
+                # Calculate wait time and retry
+                wait = backoff_factor * (2 ** attempt)
+                time.sleep(wait)
+            else:
+                # Log the final failure and return None
+                print(f"Failed to fetch {url} after {max_retries} attempts: {e}")
+                return None
+
 def get_recent_trades(ticker):
-        url = f"http://openinsider.com/{ticker}"
-        response = requests.get(url)
+    """
+    Scrapes recent insider trades for a given ticker using robust network requests.
+    """
+    url = f"http://openinsider.com/{ticker}"
+    try:
+        # Use the robust helper function to make the request
+        response = _robust_get(url)
+        if response is None:
+            return None  # Skip if the request ultimately fails
+
         soup = BeautifulSoup(response.content, 'html.parser')
         table = soup.find('table', {'class': 'tinytable'})
         if not table:
             return None
+            
         rows = table.find_all('tr')[1:]  # Skip header row
 
-        num_purchases_month = 0
-        num_sales_month = 0
-        total_value_purchases_month = 0
-        total_value_sales_month = 0
-
-        num_purchases_quarter = 0
-        num_sales_quarter = 0
-        total_value_purchases_quarter = 0
-        total_value_sales_quarter = 0
+        # Initialize counters for different time windows
+        num_purchases_month, num_sales_month = 0, 0
+        total_value_purchases_month, total_value_sales_month = 0, 0
+        num_purchases_quarter, num_sales_quarter = 0, 0
+        total_value_purchases_quarter, total_value_sales_quarter = 0, 0
 
         for row in rows:
             cells = row.find_all('td')
+            if len(cells) < 12: continue # Ensure row has enough cells
+            
             trade_type = cells[6].text.strip()
             trade_date = pd.to_datetime(cells[1].text.strip())
-            value = float(cells[11].text.strip().replace('$', '').replace(',', ''))
+            value_str = cells[11].text.strip().replace('$', '').replace(',', '')
+            if not value_str: continue
+            
+            value = float(value_str)
+            days_since_trade = (pd.Timestamp.now() - trade_date).days
 
-            days_since_trade = (datetime.datetime.now() - trade_date).days
-
+            # Aggregate data for the last month
             if days_since_trade <= 30:
-                if trade_type == 'P - Purchase':
+                if 'Purchase' in trade_type:
                     num_purchases_month += 1
                     total_value_purchases_month += value
-                elif trade_type == 'S - Sale':
+                elif 'Sale' in trade_type:
                     num_sales_month += 1
                     total_value_sales_month += value
-
+            
+            # Aggregate data for the last quarter
             if days_since_trade <= 90:
-                if trade_type == 'P - Purchase':
+                if 'Purchase' in trade_type:
                     num_purchases_quarter += 1
                     total_value_purchases_quarter += value
-                elif trade_type == 'S - Sale':
+                elif 'Sale' in trade_type:
                     num_sales_quarter += 1
                     total_value_sales_quarter += value
-
-        total_value_month = total_value_purchases_month + total_value_sales_month
-        total_value_quarter = total_value_purchases_quarter + total_value_sales_quarter
 
         return {
             'num_purchases_month': num_purchases_month,
             'num_sales_month': num_sales_month,
-            'total_value_month': total_value_month,
+            'total_value_month': total_value_purchases_month + total_value_sales_month,
             'num_purchases_quarter': num_purchases_quarter,
             'num_sales_quarter': num_sales_quarter,
-            'total_value_quarter': total_value_quarter,
+            'total_value_quarter': total_value_purchases_quarter + total_value_sales_quarter,
         }
+    except Exception as e:
+        # Catch any other unexpected errors and return None to prevent crashing the pool
+        print(f"An unexpected error occurred for ticker {ticker}: {e}")
+        return None

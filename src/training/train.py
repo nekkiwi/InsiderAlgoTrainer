@@ -1,120 +1,169 @@
+# In src/training/train.py
+
 import os
 import time
-from tqdm import tqdm
 from datetime import timedelta
 import pandas as pd
-from sklearn.model_selection import train_test_split, StratifiedKFold, KFold, cross_validate
-from sklearn.metrics import accuracy_score, mean_squared_error, matthews_corrcoef, confusion_matrix
-import joblib
-from .utils.train_helpers import load_data, get_model, save_training_data
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.model_selection import KFold
+import itertools
+from tqdm import tqdm
+
+# --- Import the new feature selection helper ---
+from src.training.utils.feature_selector_helpers import select_features_for_fold
+
+from .utils.train_helpers import (
+    load_data,
+    # load_selected_features is NO LONGER needed here
+    find_optimal_threshold,
+    evaluate_test_fold,
+    save_strategy_results,
+    plot_final_summary
+)
+
 
 class ModelTrainer:
     def __init__(self):
         base = os.path.join(os.path.dirname(__file__), '../../data')
         self.features_file = os.path.join(base, 'final/features_final.xlsx')
         self.targets_file = os.path.join(base, 'final/targets_final.xlsx')
-        self.sel_file = os.path.join(base, 'analysis/feature_selection/selected_features.xlsx')
         self.stats_dir = os.path.join(base, 'training/stats')
-        self.preds_dir = os.path.join(base, 'training/predictions')
         self.models_dir = os.path.join(base, 'models')
-        self.features_df = None
-        self.targets = None
-        self.train_idx = None
-        self.test_idx = None
 
     def load_data(self):
-        print("[INFO] Loading features and target datasets...")
-        self.features_df, self.targets = load_data(self.features_file, self.targets_file)
-        total = len(self.features_df)
-        print(f"[INFO] Loaded {total} feature rows and {len(self.targets)} target sheets.")
-        idx_all = list(self.features_df.index)
-        self.train_idx, self.test_idx = train_test_split(
-            idx_all, test_size=0.2, random_state=42, shuffle=True
-        )
-        print(f"[INFO] Defined train/test split: {len(self.train_idx)} train rows, {len(self.test_idx)} test rows.")
+        print("[LOAD] Loading and preparing data...")
+        self.features_df, self.targets_dict = load_data(self.features_file, self.targets_file)
+        print("[LOAD] Completed.")
 
-    def train_for_sheet(self, sheet, model_type, selected_features):
-        print(f"[INFO] Starting training for sheet '{sheet}' with model '{model_type}'.")
-        if sheet not in self.targets:
-            print(f"[WARN] Sheet '{sheet}' not found, skipping.")
-            return
-        df_t = self.targets[sheet]
-        is_reg = sheet.startswith('final_')
-        records, preds = [], []
-        print(f"[INFO] Processing {len(selected_features)} feature sets.")
-        for row in selected_features.to_dict('records'):
-            feats = [f.strip("'") for f in eval(row['Selected Features'])]
-            print(f"[INFO] Limit={row.get('Limit')}, Stop={row.get('Stop')} | {len(feats)} features.")
-            X = self.features_df.loc[:, feats]
-            if is_reg:
-                y = df_t[sheet]
-            else:
-                col = f"Limit {row['Limit']}, Stop {row['Stop']}"
-                if col not in df_t.columns:
-                    print(f"[WARN] Column '{col}' missing, skipping.")
-                    continue
-                y = df_t[col]
-            common = X.index.intersection(y.dropna().index)
-            print(f"[INFO] {len(common)} rows align with target.")
-            train_idx = [i for i in common if i in self.train_idx]
-            test_idx = [i for i in common if i in self.test_idx]
-            print(f"[INFO] {len(train_idx)} train rows, {len(test_idx)} test rows.")
-            if not train_idx or not test_idx:
-                print("[WARN] Insufficient data for split, skipping.")
-                continue
-            Xtr, ytr = X.loc[train_idx], y.loc[train_idx]
-            Xte, yte = X.loc[test_idx], y.loc[test_idx]
-            cv = KFold(5, shuffle=True, random_state=42) if is_reg else StratifiedKFold(5)
-            model = get_model(model_type, is_reg)
-            print("[INFO] Running cross-validation folds...")
-            cv_res = cross_validate(model, Xtr, ytr, cv=cv, return_estimator=True)
-            for i, est in tqdm(enumerate(cv_res['estimator'], 1), desc="Saving CV folds", total=5):
-                est.fit(Xtr, ytr)
-                path = os.path.join(self.models_dir, f"{model_type}_{sheet}", f"fold_{i}.joblib")
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                joblib.dump(est, path)
-            print("[INFO] Fitting final model...")
-            model.fit(Xtr, ytr)
-            ypred = model.predict(Xte)
-            if is_reg:
-                print("[INFO] Computing regression metrics...")
-                bin_true = (yte > 0).astype(int)
-                bin_pred = (ypred > 0).astype(int)
-                mse = mean_squared_error(yte, ypred)
-                acc = accuracy_score(bin_true, bin_pred)
-                mcc = matthews_corrcoef(bin_true, bin_pred)
-                cm = confusion_matrix(bin_true, bin_pred)
-                ppv = cm[1,1] / max((cm[1,1]+cm[0,1]),1)
-                npv = cm[0,0] / max((cm[0,0]+cm[1,0]),1)
-                records.append({'Limit': row['Limit'], 'Stop': row['Stop'], 'MSE': mse,
-                                'Accuracy': acc, 'MCC': mcc, 'PPV': ppv, 'NPV': npv})
-            else:
-                print("[INFO] Computing classification accuracy...")
-                acc = accuracy_score(yte, ypred)
-                records.append({'Limit': row['Limit'], 'Stop': row['Stop'], 'Accuracy': acc})
-            df_pred = pd.DataFrame({f'Pred_{sheet}': ypred, f'GT_{sheet}': yte}, index=yte.index)
-            if not df_pred.empty:
-                print(f"[INFO] Recording {len(df_pred)} predictions.")
-                preds.append({'Predictions': df_pred, 'Limit': row['Limit'], 'Stop': row['Stop']})
-        print(f"[INFO] Saving results for '{sheet}'.")
-        save_training_data(records, preds, self.stats_dir, self.preds_dir, model_type, sheet, self.features_df)
+    def _prepare_strategy_data(self, category: str, timepoint: str, threshold_pct: int):
+        """
+        Prepares the full X and y data for a single strategy without pre-selecting features.
+        """
+        continuous_target_name = f"{category}_{timepoint}_raw"
+        if continuous_target_name not in self.targets_dict:
+            return None, None, None
+        
+        # We start with ALL features
+        all_features = self.features_df.drop(columns=['Ticker', 'Filing Date'], errors='ignore').columns.tolist()
+        X_base = self.features_df[['Ticker', 'Filing Date'] + all_features]
 
-    def run(self, model_type, timepoints, metrics):
-        print(f"[START] {model_type} across {len(timepoints)} timepoints and {len(metrics)} metrics.")
+        merged = pd.merge(X_base, self.targets_dict[continuous_target_name], on=['Ticker', 'Filing Date'], how='inner')
+        merged.dropna(subset=[continuous_target_name], inplace=True)
+        if merged.empty:
+            return None, None, None
+        
+        merged = merged.sort_values(by='Filing Date').reset_index(drop=True)
+        y_binary = (merged[continuous_target_name] >= (threshold_pct / 100.0)).astype(int)
+        
+        return merged[all_features], y_binary, merged[continuous_target_name]
+
+    def _train_models(self, X_tr, y_bin_tr, y_cont_tr, seed):
+        # This function remains the same
+        clf = RandomForestClassifier(n_estimators=200, max_depth=12, min_samples_leaf=5, class_weight='balanced', random_state=seed, n_jobs=-1)
+        clf.fit(X_tr, y_bin_tr)
+        reg = None
+        pos_train_idx = X_tr.index[y_bin_tr == 1]
+        if not pos_train_idx.empty:
+            reg = RandomForestRegressor(n_estimators=200, max_depth=8, min_samples_leaf=15, random_state=seed, n_jobs=-1)
+            reg.fit(X_tr.loc[pos_train_idx], y_cont_tr.loc[pos_train_idx])
+        return clf, reg
+
+    def run(self, category: str, timepoints: list, thresholds: list, model_type: str,
+            optimize_for: str, top_n: int, seeds: list, n_splits: int = 5):
+        start_time = time.time()
+        print(f"\n### START ### {model_type} Walk-Forward with In-Loop Feature Selection ###")
         self.load_data()
-        overall_start = time.time()
-        for metric in metrics:
-            for tp in timepoints:
-                sheet = f"final_{metric}_{tp}_raw"
-                try:
-                    selected_features = pd.read_excel(self.sel_file, sheet_name=sheet)
-                except Exception:
-                    print(f"[WARN] No features for {sheet}, skipping.")
+
+        all_fold_results = []
+        all_combinations = list(itertools.product(seeds, timepoints, thresholds))
+
+        for seed, tp, thresh_pct in tqdm(all_combinations, desc="Processing Strategies"):
+            # 1. Prepare data for the strategy with ALL features
+            X, y_binary, y_continuous = self._prepare_strategy_data(category, tp, thresh_pct)
+            if X is None: continue
+
+            kf = KFold(n_splits=n_splits, shuffle=False)
+            fold_count = 0
+
+            for train_val_indices, test_indices in kf.split(X):
+                fold_count += 1
+                val_size = int(len(train_val_indices) * 0.2)
+                train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
+
+                # Split data for the current fold
+                X_tr, y_bin_tr = X.iloc[train_indices], y_binary.iloc[train_indices]
+                X_val, y_cont_val = X.iloc[val_indices], y_continuous.iloc[val_indices]
+                X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices], y_binary.iloc[test_indices], y_continuous.iloc[test_indices]
+
+                # 2. Perform feature selection USING ONLY THE TRAINING DATA FOR THIS FOLD
+                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
+                
+                if not selected_features:
+                    print(f"Fold {fold_count}: No features selected. Skipping.")
                     continue
-                print(f"\n>>> {sheet} with {len(selected_features)} feature sets >>>")
-                t0 = time.time()
-                self.train_for_sheet(sheet, model_type, selected_features)
-                duration = timedelta(seconds=int(time.time()-t0))
-                print(f"<<< Completed {sheet} in {duration} <<<")
-        total = timedelta(seconds=int(time.time()-overall_start))
-        print(f"[COMPLETE] All done in {total}.")
+
+                # 3. Use the selected features to train and evaluate
+                X_tr_sel = X_tr[selected_features]
+                X_val_sel = X_val[selected_features]
+                X_ts_sel = X_ts[selected_features]
+                y_cont_tr = y_continuous.iloc[train_indices]
+
+                if X_tr_sel.empty or X_val_sel.empty or X_ts_sel.empty: continue
+
+                classifier, regressor = self._train_models(X_tr_sel, y_bin_tr, y_cont_tr, seed)
+                if regressor is None: continue
+
+                val_buy_signals = classifier.predict(X_val_sel)
+                val_pos_idx = X_val_sel.index[val_buy_signals == 1]
+                if val_pos_idx.empty: continue
+                
+                val_predicted_returns = pd.Series(regressor.predict(X_val_sel.loc[val_pos_idx]), index=val_pos_idx)
+                optimization_results = find_optimal_threshold(val_predicted_returns, y_cont_val.loc[val_pos_idx], optimize_for=optimize_for)
+                optimal_X = optimization_results['optimal_threshold']
+
+                fold_metrics = evaluate_test_fold(classifier, regressor, optimal_X, X_ts_sel, y_bin_ts, y_cont_ts)
+
+                if fold_metrics:
+                    result = {'Timepoint': tp, 'Threshold': f"{thresh_pct}%", 'Top_n_Features': top_n, 'Seed': seed, 'Fold': fold_count}
+                    result.update(fold_metrics)
+                    all_fold_results.append(result)
+        
+        # The rest of the script for saving and plotting results remains largely the same...
+        if all_fold_results:
+            results_df = pd.DataFrame(all_fold_results)
+            save_strategy_results(results_df, self.stats_dir, model_type, category, optimize_for)
+            summary_dir = os.path.join(self.stats_dir, 'summary')
+            plot_final_summary(results_df, summary_dir, category, optimize_for)
+            
+            print(f"\n--- Strategy Performance (Mean over {n_splits} folds, Ranked by {optimize_for}) ---")
+            
+            # --- MODIFIED: display_cols now includes p-values ---
+            display_cols = [
+                'Adjusted Sharpe (Final)', 'Adjusted Sharpe (Classifier)', 
+                'P-Value (Final vs Neg)', 'P-Value (Classifier vs Neg)',
+                'Num Signals (Final)', 'Num Signals (Classifier)', 'Optimal Threshold'
+            ]
+            
+            grouped = results_df.groupby(['Timepoint', 'Threshold', 'Top_n_Features'])[display_cols]
+            mean_df = grouped.mean()
+            std_df = grouped.std()
+
+            formatted_df = pd.DataFrame(index=mean_df.index)
+            for col in display_cols:
+                if len(seeds) == 1:
+                    formatted_df[col] = mean_df[col].map('{:.4f}'.format)
+                else:
+                    formatted_df[col] = (mean_df[col].map('{:.4f}'.format) + ' \u00B1 ' + std_df[col].fillna(0).map('{:.4f}'.format))
+
+            sort_col = 'Adjusted Sharpe (Final)' if optimize_for == 'adjusted_sharpe' else 'Sharpe Ratio (Strategy)'
+            sorted_index = mean_df[sort_col].sort_values(ascending=False).index
+            print(formatted_df.loc[sorted_index].to_string())
+        else:
+            print("\n[INFO] No valid strategies were found after walk-forward validation.")
+        
+        elapsed_time = timedelta(seconds=int(time.time() - start_time))
+        print(f"\n### END ### Total run time: {elapsed_time}")
+
+        return pd.DataFrame(all_fold_results)
+

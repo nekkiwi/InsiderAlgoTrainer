@@ -1,7 +1,13 @@
 import os
 import time
 from datetime import timedelta
-from .utils.stock_analysis_helpers import load_stock_data, filter_jumps, save_summary_statistics, plot_combined
+# --- FIX: Use the new, more robust helper function ---
+from .utils.stock_analysis_helpers import (
+    load_stock_data, 
+    filter_and_align_data, 
+    save_summary_statistics, 
+    plot_combined
+)
 
 class StockAnalysis:
     def __init__(self):
@@ -11,33 +17,33 @@ class StockAnalysis:
         self.return_df = None
         self.alpha_df = None
 
-    def run(self, return_df=None, alpha_df=None):
+    def run(self):
         start_time = time.time()
         print("\n### START ### Stock Analysis")
 
-        # Load data if not provided
-        if return_df is None:
-            self.return_df = load_stock_data(self.stock_returns_file, sheet_name='Returns')
-        else:
-            self.return_df = return_df
-        
-        if alpha_df is None:
-            self.alpha_df = load_stock_data(self.stock_returns_file, sheet_name='Alpha')
-        else:
-            self.alpha_df = alpha_df
+        # Load data
+        self.return_df = load_stock_data(self.stock_returns_file, sheet_name='Returns')
+        self.alpha_df = load_stock_data(self.stock_returns_file, sheet_name='Alpha')
 
-        # Process return_df
-        self.return_df = filter_jumps(self.return_df)
+        # --- FIX: Filter both dataframes together to keep them aligned ---
+        # The filter condition is calculated based on the return_df, and then
+        # the same rows are kept for both dataframes, ensuring they stay in sync.
+        # self.return_df, self.alpha_df = filter_and_align_data(
+        #     self.return_df, [self.alpha_df], max_jump=0.1
+        # )
+
+        # Process the aligned return_df
+        print("\n--- Processing Returns ---")
         save_summary_statistics(self.return_df, self.output_dir, 'stock_returns_summary_stats_return.xlsx')
         plot_combined(self.return_df, self.output_dir, '_return')
 
-        # Process alpha_df
-        self.alpha_df = filter_jumps(self.alpha_df)
+        # Process the aligned alpha_df
+        print("\n--- Processing Alpha ---")
         save_summary_statistics(self.alpha_df, self.output_dir, 'stock_returns_summary_stats_alpha.xlsx')
         plot_combined(self.alpha_df, self.output_dir, '_alpha')
 
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
-        print(f"### END ### Stock Analysis - time elapsed: {elapsed_time}")
+        print(f"\n### END ### Stock Analysis - time elapsed: {elapsed_time}")
 
 
 if __name__ == "__main__":

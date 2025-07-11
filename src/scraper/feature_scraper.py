@@ -28,9 +28,9 @@ class FeatureScraper:
 
         # Prepare the date ranges
         for _ in range(num_weeks):
-            start_date = end_date - datetime.timedelta(days=7)  # Each range is 1 month
+            start_date = end_date - datetime.timedelta(days=7)  # Each range is 1 week
             date_ranges.append((start_date, end_date))
-            end_date = start_date  # Move back another month
+            end_date = start_date  # Move back another week
 
         # Use multiprocessing to fetch and parse data in parallel
         with Pool(cpu_count()) as pool:
@@ -48,6 +48,7 @@ class FeatureScraper:
     def clean_table(self, drop_threshold=0.05):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
+        # This function correctly converts the column to datetime objects initially
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
@@ -74,11 +75,14 @@ class FeatureScraper:
         # Group by Ticker and Filing Date, then aggregate
         self.data = aggregate_group(self.data)
         
-        # Format the date column and drop any remaining rows with missing values
-        self.data['Filing Date'] = self.data['Filing Date'].dt.strftime('%d-%m-%Y %H:%M')
+        # --- THIS IS THE KEY FIX ---
+        # Ensure 'Filing Date' remains a datetime object and is not converted to a string.
+        # We remove any string formatting like .dt.strftime().
+        self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'])
         
-        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
+        # Clean the data by dropping columns and rows with missing values
         self.data = clean_data(self.data, drop_threshold)
+
 
         
     def add_technical_indicators(self, drop_threshold=0.05):
@@ -97,29 +101,43 @@ class FeatureScraper:
         self.data = clean_data(self.data, drop_threshold)
 
 
-    def add_financial_ratios(self, drop_threshold=0.05):
-        # No parallelization => yfinance has rate-limit
+    def add_financial_ratios(self, drop_threshold=0.2):
+        """
+        Fetches financial ratios and merges them using a robust strategy
+        to ensure the merge keys align correctly.
+        """
+        if self.data.empty:
+            print("- Data is empty, skipping financial ratio processing.")
+            return
+
+        print(f"[INFO] Fetching financial ratios for {len(self.data)} entries...")
+        ratios_df = batch_fetch_financial_data(self.data[['Ticker', 'Filing Date']])
+
+        if ratios_df.empty:
+            print("- Could not fetch any financial ratios. Continuing without new data.")
+            return
+
+        # --- Robust Merge Preparation ---
+        # 1. Ensure the merge key ('Filing Date') is a consistent datetime type in both DataFrames.
+        #    This is the most critical step to prevent key misalignment and merge failures.
+        self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'])
+        ratios_df['Filing Date'] = pd.to_datetime(ratios_df['Filing Date'])
+
+        # --- End of Preparation ---
+
+        # 2. Perform the merge. It will now align correctly because the keys are of the same type.
+        print(f"[INFO] Merging {len(ratios_df)} new financial ratios into the dataset.")
+        self.data = pd.merge(self.data, ratios_df, on=['Ticker', 'Filing Date'], how='left')
         
-        rows = self.data.to_dict('records')
-        
-        # Apply financial ratios sequentially
-        processed_rows = []
-        for row in tqdm(rows, desc="- Scraping financial ratios"):
-            result = process_ticker_financial_ratios(row)
-            if result is not None:
-                processed_rows.append(result)
-        
-        self.data = pd.DataFrame(processed_rows)
-        time.sleep(1)
-        
+        # 3. Process and clean the newly merged data.
         if 'Sector' in self.data.columns:
-            # Add sector dummies and drop the Sector column
             sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
             self.data = pd.concat([self.data, sector_dummies], axis=1)
             self.data.drop(columns=['Sector'], inplace=True)
         
-        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
         self.data = clean_data(self.data, drop_threshold)
+        print(f"[INFO] Financial ratio processing complete. DataFrame now has {len(self.data.columns)} columns.")
+
 
 
     def add_insider_transactions(self, drop_threshold=0.05):
@@ -183,6 +201,7 @@ class FeatureScraper:
         if os.path.exists(file_path):
             try:
                 self.data = pd.read_excel(file_path)
+                time.sleep(1)
                 print(f"- Sheet successfully loaded from {file_path}.")
             except Exception as e:
                 print(f"- Failed to load sheet from {file_path}: {e}")
@@ -193,17 +212,21 @@ class FeatureScraper:
         start_time = time.time()
         print("\n### START ### Feature Scraper")
         self.train = train
-        self.fetch_data_from_pages(num_weeks)
-        if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
+        # self.fetch_data_from_pages(num_weeks)
+        # if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
         
-        self.clean_table(drop_threshold=0.05)
-        if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
+        # self.clean_table(drop_threshold=0.05)
+        # if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
         
-        self.add_technical_indicators(drop_threshold=0.05)
-        if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
+        # self.add_technical_indicators(drop_threshold=0.05)
+        # if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
         
-        self.add_financial_ratios(drop_threshold=0.2)
+        self.load_sheet(f'interim/train/2_features_TI.xlsx')
+        
+        self.add_financial_ratios(drop_threshold=0.5)
         if train: self.save_to_excel(f'interim/train/3_features_TI_FR.xlsx')
+        
+        # self.load_sheet(f'interim/train/3_features_TI_FR.xlsx')
         
         self.add_insider_transactions(drop_threshold=0.05)
         if train: 

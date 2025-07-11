@@ -1,18 +1,23 @@
+# In src/inference/utils/model_inference_helpers.py
+
 import os
 import pandas as pd
 
-def load_feature_data(file_path):
-    """Load the feature data from an Excel file and extract Ticker and Filing Date."""
-    data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
-    file_path = os.path.join(data_dir, file_path)
-    if os.path.exists(file_path):
-        try:
-            data = pd.read_excel(file_path)
-            print(f"- Sheet successfully loaded from {file_path}.")
-            return data
-        except Exception as e:
-            print(f"- Failed to load sheet from {file_path}: {e}")
-            return None
-    else:
-        print(f"- File '{file_path}' does not exist.")
-        return None
+def load_inference_data(file_path: str) -> pd.DataFrame:
+    """
+    Loads data for inference from a given Excel file path.
+    Converts 'Filing Date' to datetime format.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Inference data file not found at: {file_path}")
+        
+    try:
+        df = pd.read_excel(file_path)
+        # Ensure date formatting is handled correctly after loading
+        df['Filing Date'] = pd.to_datetime(df['Filing Date'], dayfirst=True, errors='coerce')
+        print(f"- Successfully loaded inference data from {os.path.basename(file_path)} ({len(df)} rows).")
+        return df
+    except Exception as e:
+        print(f"- Failed to load inference data from {file_path}: {e}")
+        return pd.DataFrame()
+
