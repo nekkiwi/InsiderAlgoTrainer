@@ -105,17 +105,6 @@ def filter_low_variance_features(data, continuous_features, categorical_features
     # Return the updated data and feature sets
     return data, continuous_features, categorical_features
 
-def clip_continuous_features(data, continuous_features, lower=0.01, upper=0.99):
-    """Clip continuous features at the specified lower and upper percentiles."""
-    pd.set_option('future.no_silent_downcasting', True)
-    for column in continuous_features:
-        if column in data.columns:
-            lower_bound = data[column].quantile(lower)
-            upper_bound = data[column].quantile(upper)
-            data[column] = data[column].clip(lower=lower_bound, upper=upper_bound).infer_objects(copy=False)
-    print("- Clipped continuous features at the 1st and 99th percentiles.")
-    return data
-
 def drop_highly_correlated_features(data, corr_matrix, threshold=0.9):
     """
     Drop highly correlated features using a robust, iterative approach.

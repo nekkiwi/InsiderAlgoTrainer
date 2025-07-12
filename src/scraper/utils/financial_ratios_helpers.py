@@ -1,11 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import time
-import os
-import contextlib
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import timedelta
 from tqdm import tqdm
 
 # This is a provided helper function, unchanged.
@@ -256,16 +252,62 @@ def process_single_ticker(row, tk_objects, hist_data, market_data_spy):
     return None
 
 
+# def batch_fetch_financial_data(df, max_workers=4):
+#     """
+#     Processes each ticker, now including a point-in-time beta calculation
+#     by fetching and distributing SPY market data.
+#     """
+#     df_copy = df.copy()
+#     df_copy['Filing Date'] = pd.to_datetime(df_copy['Filing Date'], dayfirst=True)
+#     tickers = df_copy['Ticker'].unique().tolist()
+    
+#     # --- Step 1: Bulk Data Downloads ---
+#     print(f"Fetching fundamental data for {len(tickers)} tickers...")
+#     tk_objects = yf.Tickers(" ".join(tickers))
+    
+#     start_date = '1970-01-01'
+#     end_date = df_copy['Filing Date'].max() + pd.Timedelta(days=1)
+    
+#     print(f"Fetching historical prices for tickers from {start_date} to {end_date.date()}...")
+#     hist_data = yf.download(tickers, start=start_date, end=end_date, group_by='ticker', progress=True, auto_adjust=False, threads=True)
+
+#     # --- Step 2: Fetch Market Index Data (SPY) ---
+#     print("Fetching market index data (SPY) for beta calculation...")
+#     market_data_spy = yf.download('SPY', start=start_date, end=end_date, auto_adjust=True, threads=True)
+#     # Ensure the index is a timezone-naive datetime object for safe comparisons
+#     market_data_spy.index = market_data_spy.index.tz_localize(None)
+
+#     # --- Step 3: Process Tickers in Parallel with SPY data ---
+#     results = []
+#     with ThreadPoolExecutor(max_workers=max_workers) as executor:
+#         # Pass the market_data_spy object to each worker
+#         future_to_row = {
+#             executor.submit(process_single_ticker, row, tk_objects, hist_data, market_data_spy): row 
+#             for row in df_copy.to_dict('records')
+#         }
+        
+#         for future in tqdm(as_completed(future_to_row), total=len(future_to_row), desc="Processing Tickers in Parallel"):
+#             try:
+#                 result = future.result(timeout=30)
+#                 if result is not None:
+#                     results.append(result)
+#             except Exception as exc:
+#                 ticker = future_to_row[future].get('Ticker', 'Unknown')
+#                 # print(f"\n[DEBUG] ERROR: Task for ticker '{ticker}' generated an exception: {exc}")
+
+#     print(f"[INFO] Parallel processing finished. Successfully processed {len(results)} tickers.")
+#     return pd.DataFrame(results)
+
 def batch_fetch_financial_data(df, max_workers=4):
     """
-    Processes each ticker, now including a point-in-time beta calculation
-    by fetching and distributing SPY market data.
+    Processes each ticker to fetch company-specific data and then enriches the
+    final output with pre-calculated, point-in-time market regime indicators.
     """
     df_copy = df.copy()
     df_copy['Filing Date'] = pd.to_datetime(df_copy['Filing Date'], dayfirst=True)
     tickers = df_copy['Ticker'].unique().tolist()
-    
-    # --- Step 1: Bulk Data Downloads ---
+
+    # --- Step 1: Bulk Data Downloads (with new market indices) ---
     print(f"Fetching fundamental data for {len(tickers)} tickers...")
     tk_objects = yf.Tickers(" ".join(tickers))
     
@@ -274,30 +316,67 @@ def batch_fetch_financial_data(df, max_workers=4):
     
     print(f"Fetching historical prices for tickers from {start_date} to {end_date.date()}...")
     hist_data = yf.download(tickers, start=start_date, end=end_date, group_by='ticker', progress=True, auto_adjust=False, threads=True)
+    
+    print("Fetching market index data (SPY, VIX, GSPC) for regime indicators...")
+    market_indices = yf.download('SPY ^VIX ^GSPC', start=start_date, end=end_date, auto_adjust=True, threads=True)
+    market_data_spy = market_indices['Close']['SPY'].to_frame().rename(columns={'SPY': 'Close'})
+    market_data_gspc = market_indices['Close']['^GSPC'].to_frame().rename(columns={'^GSPC': 'Close'})
+    market_data_vix = market_indices['Close']['^VIX'].to_frame().rename(columns={'^VIX': 'Close'})
 
-    # --- Step 2: Fetch Market Index Data (SPY) ---
-    print("Fetching market index data (SPY) for beta calculation...")
-    market_data_spy = yf.download('SPY', start=start_date, end=end_date, auto_adjust=True, threads=True)
-    # Ensure the index is a timezone-naive datetime object for safe comparisons
-    market_data_spy.index = market_data_spy.index.tz_localize(None)
-
-    # --- Step 3: Process Tickers in Parallel with SPY data ---
+    # --- Step 2: Pre-calculate Market Regime Indicators ---
+    print("[REGIME] Pre-calculating market regime indicators...")
+    regime_df = pd.DataFrame(index=market_indices.index)
+    
+    # Volatility Indicators
+    regime_df['VIX_Close'] = market_data_vix['Close']
+    regime_df['VIX_SMA50'] = market_data_vix['Close'].rolling(window=50).mean()
+    
+    # Market Trend Indicators
+    gspc_sma50 = market_data_gspc['Close'].rolling(window=50).mean()
+    gspc_sma200 = market_data_gspc['Close'].rolling(window=200).mean()
+    regime_df['SP500_Above_SMA50'] = (market_data_gspc['Close'] > gspc_sma50).astype(int)
+    regime_df['SP500_Above_SMA200'] = (market_data_gspc['Close'] > gspc_sma200).astype(int)
+    
+    # Drop any initial rows with NaNs from rolling calculations
+    regime_df.dropna(inplace=True)
+    
+    # --- Step 3: Process Company-Specific Tickers in Parallel (Unchanged) ---
     results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Pass the market_data_spy object to each worker
         future_to_row = {
-            executor.submit(process_single_ticker, row, tk_objects, hist_data, market_data_spy): row 
+            executor.submit(process_single_ticker, row, tk_objects, hist_data, market_data_spy): row
             for row in df_copy.to_dict('records')
         }
-        
         for future in tqdm(as_completed(future_to_row), total=len(future_to_row), desc="Processing Tickers in Parallel"):
             try:
                 result = future.result(timeout=30)
                 if result is not None:
                     results.append(result)
             except Exception as exc:
-                ticker = future_to_row[future].get('Ticker', 'Unknown')
-                # print(f"\n[DEBUG] ERROR: Task for ticker '{ticker}' generated an exception: {exc}")
+                pass # Error handling remains the same
 
-    print(f"[INFO] Parallel processing finished. Successfully processed {len(results)} tickers.")
-    return pd.DataFrame(results)
+    if not results:
+        print("[INFO] No company-specific data could be processed.")
+        return pd.DataFrame()
+
+    company_ratios_df = pd.DataFrame(results)
+
+    # --- Step 4: Point-in-Time Merge of Regime Indicators ---
+    print("[REGIME] Merging market regime features into the final dataset...")
+    
+    # Ensure date columns are correctly formatted for merging
+    company_ratios_df['Filing Date'] = pd.to_datetime(company_ratios_df['Filing Date'])
+    company_ratios_df.sort_values('Filing Date', inplace=True)
+    
+    # Use merge_asof for a robust, point-in-time join.
+    # This finds the latest regime indicator data available for each filing date.
+    enriched_df = pd.merge_asof(
+        company_ratios_df,
+        regime_df,
+        left_on='Filing Date',
+        right_index=True,
+        direction='backward'
+    )
+    
+    print(f"[INFO] Final processing complete. Successfully processed {len(enriched_df)} entries.")
+    return enriched_df

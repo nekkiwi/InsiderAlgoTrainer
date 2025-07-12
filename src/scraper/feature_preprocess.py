@@ -46,11 +46,6 @@ class FeaturePreprocessor:
         self.continuous_features = cont_df_filtered.columns.tolist()
         self.categorical_features = cat_df_filtered.columns.tolist()
 
-    # --- MODIFIED: Renamed and simplified this method ---
-    def clip_features(self, lower=0.01, upper=0.99):
-        """Clips continuous features to handle outliers. Normalization is removed."""
-        self.data = clip_continuous_features(self.data, self.continuous_features, lower, upper)
-
     def calculate_and_plot_correlations(self, output_dir):
         # This method remains the same
         cont_df = self.data[self.continuous_features]
@@ -82,9 +77,6 @@ class FeaturePreprocessor:
         # as normalization is no longer handled here.
         if train:
             self.filter_low_variance_features()
-            # --- MODIFIED: Call the new clipping method ---
-            self.clip_features(lower=0.01, upper=0.99)
-            
             plot_output_dir = os.path.join(os.path.dirname(__file__), '../../data', 'analysis/feature_preprocess')
             os.makedirs(plot_output_dir, exist_ok=True)
             self.calculate_and_plot_correlations(plot_output_dir)
