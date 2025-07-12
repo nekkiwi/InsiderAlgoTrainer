@@ -27,7 +27,7 @@ def main():
     ############
     
     model        = "RandomForest"
-    optimize_for = "adjusted_sharpe" # sharpe, adjusted_sharpe or information_ratio
+    optimize_for = "adjusted_sharpe"
     seeds        = [42, 123, 2024, 99, 7]  # A list of 5 different seeds
 
     model_trainer.run(category, timepoints, thresholds, model, optimize_for, top_n, seeds)

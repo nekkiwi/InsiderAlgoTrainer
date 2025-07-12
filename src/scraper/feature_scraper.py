@@ -148,7 +148,7 @@ class FeatureScraper:
             for row in rows
         ]
         
-        with Pool(os.cpu_count()) as pool: # Using a reduced number of workers
+        with Pool(2) as pool: # Using a reduced number of workers
             # We call pool.imap with our new helper function, get_recent_trades_star.
             # tqdm can now correctly iterate as each task is completed.
             processed_rows = list(tqdm(pool.imap(get_recent_trades_star, tasks, chunksize=1), total=len(tasks), desc="- Scraping recent insider trades"))
@@ -218,14 +218,14 @@ class FeatureScraper:
         start_time = time.time()
         print("\n### START ### Feature Scraper")
         self.train = train
-        # self.fetch_data_from_pages(num_weeks)
-        # if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
+        self.fetch_data_from_pages(num_weeks)
+        if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
         
-        # self.clean_table(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
+        self.clean_table(drop_threshold=0.05)
+        if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
         
-        # self.add_technical_indicators(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
+        self.add_technical_indicators(drop_threshold=0.05)
+        if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
         
         self.load_sheet(f'interim/train/2_features_TI.xlsx')
         
@@ -234,9 +234,9 @@ class FeatureScraper:
         
         # self.load_sheet(f'interim/train/3_features_TI_FR.xlsx')
         
-        self.add_insider_transactions(drop_threshold=0.05)
+        # self.add_insider_transactions(drop_threshold=0.05)
         if train: 
-            self.save_to_excel(f'interim/train/4_features_TI_FR_IT.xlsx')
+            # self.save_to_excel(f'interim/train/4_features_TI_FR_IT.xlsx')
             self.save_feature_distribution('analysis/feature_distribution.xlsx')
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
         print(f"### END ### Feature Scraper - time elapsed: {elapsed_time}")

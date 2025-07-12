@@ -141,11 +141,10 @@ def plot_final_summary(results_df, output_dir, category, optimize_for):
     strategy_order = results_df['Strategy'].unique()
     
     # --- Define metrics to plot and which ones to clip ---
-    metrics_to_plot = [
-        'Predictive Power Score', 'Adjusted Sharpe (Final)', 'Adjusted Sharpe (Classifier)','Median Return (Final Strategy)','Median Return (Classifier)',
+    metrics_to_plot = ['Adjusted Sharpe (Final)', 'Adjusted Sharpe (Classifier)','Median Return (Final Strategy)','Median Return (Classifier)',
         'MCC (Classifier)','Num Signals (Final)', 'Num Signals (Classifier)','P-Value (Final vs Neg)', 'P-Value (Classifier vs Neg)'
     ]
-    metrics_to_clip = ['Predictive Power Score', 'Median Return (Final Strategy)', 'Adjusted Sharpe (Final)']
+    metrics_to_clip = ['Median Return (Final Strategy)', 'Adjusted Sharpe (Final)']
     
     plot_df = results_df.copy()
     for metric in metrics_to_clip:
@@ -154,7 +153,7 @@ def plot_final_summary(results_df, output_dir, category, optimize_for):
             upper_bound = plot_df[metric].quantile(0.99)
             plot_df[metric] = plot_df[metric].clip(lower=lower_bound, upper=upper_bound)
     
-    fig, axs = plt.subplots(2, 5, figsize=(70, 20), tight_layout=True)
+    fig, axs = plt.subplots(3, 3, figsize=(60, 30), tight_layout=True)
     fig.suptitle(f'Walk-Forward Validation Results (Optimized for {optimize_for.replace("_", " ").title()})', fontsize=24, y=1.03)
     
     for i, metric in enumerate(metrics_to_plot):

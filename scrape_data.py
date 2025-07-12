@@ -22,7 +22,7 @@ def main():
     
     num_weeks = 5 * 12 * 4
     
-    features_df = feature_scraper.run(num_weeks, train=True)
+    # features_df = feature_scraper.run(num_weeks, train=True)
     features_df_preprocessed = feature_preprocessor.run(features_df, train=True)
     
     #################

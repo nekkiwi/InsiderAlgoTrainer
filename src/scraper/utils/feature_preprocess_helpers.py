@@ -6,14 +6,6 @@ import seaborn as sns
 from sklearn.feature_selection import VarianceThreshold
 from scipy.stats import chi2_contingency, pointbiserialr
 
-import os
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.feature_selection import VarianceThreshold
-from scipy.stats import chi2_contingency, pointbiserialr
-
 # Helper functions for loading, saving, and identifying feature types
 
 def load_feature_data(file_path):
@@ -31,15 +23,6 @@ def load_feature_data(file_path):
     else:
         print(f"- File '{file_path}' does not exist.")
         return None
-
-def save_normalization_params(normalization_params, file_path):
-    """Save the normalization parameters (min and max values) to a CSV file."""
-    normalization_df = pd.DataFrame.from_dict(normalization_params, orient='index', columns=['min', 'max'])
-    data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
-    file_path = os.path.join(data_dir, file_path)
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    normalization_df.to_excel(file_path)
-    print(f"- Normalization parameters saved to {file_path}.")
 
 def get_ticker_filing_dates(data):
     """Extract Ticker and Filing Date."""
@@ -66,43 +49,6 @@ def save_feature_data(data, ticker_filing_dates, file_path, train):
         else:
             print("- No data to save.")
     return final_data
-
-def normalize_continuous_features(data, continuous_features):
-    """Apply Min-Max Normalization to continuous features and return the normalization parameters."""
-    normalization_params = {}
-
-    for column in continuous_features:
-        min_value = data[column].min()
-        max_value = data[column].max()
-
-        if max_value - min_value == 0:
-            print(f"- Warning: {column} has zero variance. Skipping normalization.")
-            continue
-
-        # Save the min and max values for future use
-        normalization_params[column] = {'min': min_value, 'max': max_value}
-
-        # Apply normalization
-        data[column] = (data[column] - min_value) / (max_value - min_value)
-
-    print("- Applied Min-Max Normalization to continuous features.")
-    return data, normalization_params
-
-# def identify_feature_types(data):
-#     """Identify categorical and continuous features."""
-#     categorical_feature_names = ["CEO", "CFO", "COO", "Dir", "Pres", "VP", "TenPercent", 
-#                                  "CDL_DOJI", "CDL_HAMMER", "CDL_ENGULFING", 
-#                                  "Sector_Basic Materials", "Sector_Communication Services", 
-#                                  "Sector_Consumer Cyclical", "Sector_Consumer Defensive", 
-#                                  "Sector_Energy", "Sector_Financial Services", 
-#                                  "Sector_Healthcare", "Sector_Industrials", "Sector_Real Estate", 
-#                                  "Sector_Technology", "Sector_Utilities"]
-
-#     categorical_features = data[[feature for feature in categorical_feature_names if feature in data.columns]]
-#     continuous_feature_names = [feature for feature in data.columns if feature not in categorical_feature_names]
-#     continuous_features = data[continuous_feature_names]
-
-#     return categorical_features, continuous_features
 
 def identify_feature_types(df):
     """
@@ -342,7 +288,7 @@ def engineer_new_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Strategy 3: Ratio and Momentum Features ---
     # Ratio of recent purchases to sales. High values indicate strong buying pressure.
-    df['Purchase_Sale_Ratio_Quarter'] = df['num_purchases_quarter'] / (df['num_sales_quarter'] + epsilon)
+    # df['Purchase_Sale_Ratio_Quarter'] = df['num_purchases_quarter'] / (df['num_sales_quarter'] + epsilon)
 
     # Normalizes the transaction value by the company's market cap.
     df['Value_to_MarketCap'] = df['Value'] / (df['Market_Cap'] + epsilon)
