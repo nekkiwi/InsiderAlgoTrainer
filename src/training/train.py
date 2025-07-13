@@ -153,72 +153,68 @@ class ModelTrainer:
         print(f"[INFO] Starting validation for {len(all_combinations)} strategy combinations.")
 
         for seed, tp, thresh_pct in tqdm(all_combinations, desc="Processing Strategies"):
-            
-            if (tp == "1w" and thresh_pct == 0) or \
-               (tp == "3m" and thresh_pct == 8) or \
-               (tp == "7m" and thresh_pct == 12):
-                   
-                X, y_binary, y_continuous = self._prepare_strategy_data(category, tp, thresh_pct)
-                if X is None: continue
+                
+            X, y_binary, y_continuous = self._prepare_strategy_data(category, tp, thresh_pct)
+            if X is None: continue
 
-                tscv_outer = TimeSeriesSplit(n_splits=5)
-                fold_count = 0
+            tscv_outer = TimeSeriesSplit(n_splits=5)
+            fold_count = 0
 
-                for train_val_indices, test_indices in tscv_outer.split(X):
-                    fold_count += 1
-                    val_size = int(len(train_val_indices) * 0.2)
-                    train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
+            for train_val_indices, test_indices in tscv_outer.split(X):
+                fold_count += 1
+                val_size = int(len(train_val_indices) * 0.2)
+                train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
 
-                    X_tr, y_bin_tr = X.iloc[train_indices].copy(), y_binary.iloc[train_indices].copy()
-                    X_val, y_cont_val = X.iloc[val_indices].copy(), y_continuous.iloc[val_indices].copy()
-                    X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices].copy(), y_binary.iloc[test_indices].copy(), y_continuous.iloc[test_indices].copy()
-                    y_cont_tr = y_continuous.iloc[train_indices].copy()
+                X_tr, y_bin_tr = X.iloc[train_indices].copy(), y_binary.iloc[train_indices].copy()
+                X_val, y_cont_val = X.iloc[val_indices].copy(), y_continuous.iloc[val_indices].copy()
+                X_ts, y_bin_ts, y_cont_ts = X.iloc[test_indices].copy(), y_binary.iloc[test_indices].copy(), y_continuous.iloc[test_indices].copy()
+                y_cont_tr = y_continuous.iloc[train_indices].copy()
 
-                    # Pre-processing...
-                    pd.set_option('future.no_silent_downcasting', True)
-                    for col in continuous_features:
-                        lower = X_tr[col].quantile(0.01); upper = X_tr[col].quantile(0.99)
-                        X_tr[col] = X_tr[col].clip(lower, upper); X_val[col] = X_val[col].clip(lower, upper); X_ts[col] = X_ts[col].clip(lower, upper)
-                    
-                    scaler = MinMaxScaler().fit(X_tr[continuous_features])
-                    X_tr[continuous_features] = scaler.transform(X_tr[continuous_features])
-                    X_val[continuous_features] = scaler.transform(X_val[continuous_features])
-                    X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
-                    
-                    selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
-                    if not selected_features: continue
-                    X_tr_sel, X_val_sel, X_ts_sel = X_tr[selected_features], X_val[selected_features], X_ts[selected_features]
-                    
-                    tscv_inner = TimeSeriesSplit(n_splits=3)
-                    fold_info_str = f"Strategy {tp}-{thresh_pct}%, Fold {fold_count}, Seed {seed}"
-                    
-                    # --- Updated to capture both sets of best params ---
-                    classifier, regressor, best_clf_params, best_reg_params = self._train_models(
-                        X_tr_sel, y_bin_tr, y_cont_tr, seed, model_type, use_hyperparameter_tuning, tscv_inner, fold_info_str
-                    )
-                    if regressor is None: continue
-                    
-                    # Validation and evaluation...
-                    val_buy_signals = classifier.predict(X_val_sel)
-                    val_pos_idx = X_val_sel.index[val_buy_signals == 1]
-                    if val_pos_idx.empty: continue
-                    
-                    val_predicted_returns = pd.Series(regressor.predict(X_val_sel.loc[val_pos_idx]), index=val_pos_idx)
-                    optimization_results = find_optimal_threshold(val_predicted_returns, y_cont_val.loc[val_pos_idx])
-                    optimal_X = optimization_results['optimal_threshold']
+                # Pre-processing...
+                pd.set_option('future.no_silent_downcasting', True)
+                for col in continuous_features:
+                    lower = X_tr[col].quantile(0.01); upper = X_tr[col].quantile(0.99)
+                    X_tr[col] = X_tr[col].clip(lower, upper); X_val[col] = X_val[col].clip(lower, upper); X_ts[col] = X_ts[col].clip(lower, upper)
+                
+                scaler = MinMaxScaler().fit(X_tr[continuous_features])
+                X_tr[continuous_features] = scaler.transform(X_tr[continuous_features])
+                X_val[continuous_features] = scaler.transform(X_val[continuous_features])
+                X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
+                
+                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
+                if not selected_features: continue
+                X_tr_sel, X_val_sel, X_ts_sel = X_tr[selected_features], X_val[selected_features], X_ts[selected_features]
+                
+                tscv_inner = TimeSeriesSplit(n_splits=3)
+                fold_info_str = f"Strategy {tp}-{thresh_pct}%, Fold {fold_count}, Seed {seed}"
+                
+                # --- Updated to capture both sets of best params ---
+                classifier, regressor, best_clf_params, best_reg_params = self._train_models(
+                    X_tr_sel, y_bin_tr, y_cont_tr, seed, model_type, use_hyperparameter_tuning, tscv_inner, fold_info_str
+                )
+                if regressor is None: continue
+                
+                # Validation and evaluation...
+                val_buy_signals = classifier.predict(X_val_sel)
+                val_pos_idx = X_val_sel.index[val_buy_signals == 1]
+                if val_pos_idx.empty: continue
+                
+                val_predicted_returns = pd.Series(regressor.predict(X_val_sel.loc[val_pos_idx]), index=val_pos_idx)
+                optimization_results = find_optimal_threshold(val_predicted_returns, y_cont_val.loc[val_pos_idx])
+                optimal_X = optimization_results['optimal_threshold']
 
-                    fold_metrics = evaluate_test_fold(classifier, regressor, optimal_X, X_ts_sel, y_bin_ts, y_cont_ts)
-                    
-                    if fold_metrics:
-                        result = {
-                            'Timepoint': tp, 'Threshold': f"{thresh_pct}%", 
-                            'Seed': seed, 'Fold': fold_count, 'Model': model_type, 
-                            'Best Classifier Params': str(best_clf_params),
-                            'Best Regressor Params': str(best_reg_params)
-                        }
-                        result.update(fold_metrics)
-                        all_fold_results.append(result)
-        
+                fold_metrics = evaluate_test_fold(classifier, regressor, optimal_X, X_ts_sel, y_bin_ts, y_cont_ts)
+                
+                if fold_metrics:
+                    result = {
+                        'Timepoint': tp, 'Threshold': f"{thresh_pct}%", 
+                        'Seed': seed, 'Fold': fold_count, 'Model': model_type, 
+                        'Best Classifier Params': str(best_clf_params),
+                        'Best Regressor Params': str(best_reg_params)
+                    }
+                    result.update(fold_metrics)
+                    all_fold_results.append(result)
+    
         if all_fold_results:
             results_df = pd.DataFrame(all_fold_results)
             save_strategy_results(results_df, self.stats_dir, f"{model_type}_{'Tuned' if use_hyperparameter_tuning else 'Default'}", category)
