@@ -8,8 +8,8 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 
+from .utils.train_helpers import select_features_for_fold
 from .utils.train_final_model_helpers import load_data, save_final_models
-from .utils.feature_selector_helpers import select_features_for_fold
 
 class FinalModelTrainer:
     def __init__(self):
@@ -95,17 +95,21 @@ class FinalModelTrainer:
         # 1. Prepare data from the entire historical record
         X_full, y_binary_full, y_continuous_full = self._prepare_full_dataset(category, timepoint, threshold_pct)
 
-        # --- FIX: Select features for each seed and create a robust union of them ---
-        print(f"- Selecting features across {len(seeds)} seeds to create a robust feature set...")
-        all_feature_sets = []
+        # --- CORRECTED LOGIC: Select the most STABLE features across all seeds ---
+        print(f"- Selecting features across {len(seeds)} seeds to find the most stable set...")
+        all_features_list = []
         for seed in seeds:
-            # Pass the seed to the feature selector
             selected_features_for_seed = select_features_for_fold(X_full, y_binary_full, top_n, seed)
-            all_feature_sets.append(set(selected_features_for_seed))
+            all_features_list.extend(selected_features_for_seed)
 
-        # Create the final feature set by taking the union of all features found
-        final_selected_features = sorted(list(set.union(*all_feature_sets)))
-        print(f"- Created a final feature set with {len(final_selected_features)} unique features from the union.")
+        # Count the frequency of each feature
+        feature_counts = pd.Series(all_features_list).value_counts()
+        
+        # Select the top_n most frequently occurring features
+        final_selected_features = feature_counts.nlargest(top_n).index.tolist()
+        
+        print(f"- Identified the top {len(final_selected_features)} most stable features based on frequency.")
+        print("Selected features:", final_selected_features)
         
         X_selected = X_full[final_selected_features].copy()
 

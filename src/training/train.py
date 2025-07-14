@@ -7,18 +7,17 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
-# Note: You will need to install lightgbm: pip install lightgbm
 from lightgbm import LGBMClassifier, LGBMRegressor
 import itertools
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
 
-from src.training.utils.feature_selector_helpers import select_features_for_fold
 from .utils.train_helpers import (
     load_data,
     find_optimal_threshold,
     evaluate_test_fold,
-    save_strategy_results
+    save_strategy_results,
+    select_features_for_fold
 )
 
 class ModelTrainer:
@@ -109,7 +108,10 @@ class ModelTrainer:
             if model_type == 'RandomForest':
                 classifier = RandomForestClassifier(n_estimators=200, max_depth=12, min_samples_leaf=5, class_weight='balanced', random_state=seed, n_jobs=-1)
             elif model_type == 'LightGBM':
-                classifier = LGBMClassifier(n_estimators=100, learning_rate=0.1, num_leaves=31, random_state=seed, n_jobs=-1, verbosity=-1)
+                classifier = LGBMClassifier(n_estimators=100,
+                                            learning_rate=0.1, 
+                                            num_leaves=31,
+                                            random_state=seed, n_jobs=-1, verbosity=-1)
             classifier.fit(X_tr, y_bin_tr)
 
         # --- Stage 2: Train or Tune the Regressor ---
@@ -134,7 +136,10 @@ class ModelTrainer:
                 if model_type == 'RandomForest':
                     regressor = RandomForestRegressor(n_estimators=200, max_depth=8, min_samples_leaf=15, random_state=seed, n_jobs=-1)
                 elif model_type == 'LightGBM':
-                    regressor = LGBMRegressor(n_estimators=100, learning_rate=0.1, num_leaves=31, random_state=seed, n_jobs=-1, verbosity=-1)
+                    regressor = LGBMRegressor(n_estimators=100,
+                                              learning_rate=0.1,
+                                              num_leaves=31,
+                                              random_state=seed, n_jobs=-1, verbosity=-1)
                 regressor.fit(X_reg_train, y_reg_train)
 
         return classifier, regressor, best_classifier_params, best_regressor_params
@@ -162,6 +167,8 @@ class ModelTrainer:
 
             for train_val_indices, test_indices in tscv_outer.split(X):
                 fold_count += 1
+                fold_info_str = f"Strategy {tp}-{thresh_pct}%, Fold {fold_count}, Seed {seed}"
+                
                 val_size = int(len(train_val_indices) * 0.2)
                 train_indices, val_indices = train_val_indices[:-val_size], train_val_indices[-val_size:]
 
@@ -182,11 +189,12 @@ class ModelTrainer:
                 X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
                 
                 selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n, seed)
+                print(f"Selected features for {fold_info_str}: ", selected_features)
                 if not selected_features: continue
                 X_tr_sel, X_val_sel, X_ts_sel = X_tr[selected_features], X_val[selected_features], X_ts[selected_features]
                 
                 tscv_inner = TimeSeriesSplit(n_splits=3)
-                fold_info_str = f"Strategy {tp}-{thresh_pct}%, Fold {fold_count}, Seed {seed}"
+                
                 
                 # --- Updated to capture both sets of best params ---
                 classifier, regressor, best_clf_params, best_reg_params = self._train_models(

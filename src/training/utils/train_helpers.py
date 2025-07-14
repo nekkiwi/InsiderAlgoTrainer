@@ -9,6 +9,44 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import mannwhitneyu
 from sklearn.metrics import matthews_corrcoef
+from lightgbm import LGBMClassifier
+
+def select_features_for_fold(X: pd.DataFrame, y: pd.Series, top_n: int, seed: int) -> list:
+    """
+    Selects the top N features based on feature importance from a LightGBM model.
+    
+    Args:
+        X (pd.DataFrame): Feature matrix.
+        y (pd.Series): Target vector.
+        top_n (int): Number of top features to select.
+        seed (int): Random seed to ensure reproducibility.
+        
+    Returns:
+        List[str]: List of top_n feature names.
+    """
+    if X.empty:
+        return []
+    
+    # Initialize LightGBM model with the provided seed
+    feature_ranker = LGBMClassifier(n_estimators=100, learning_rate=0.1, num_leaves=31, random_state=seed, n_jobs=-1, verbosity=-1)
+    
+    # Fit the model to compute feature importances
+    feature_ranker.fit(X, y)
+    
+    # Build DataFrame of feature importances
+    importances_df = pd.DataFrame({
+        'Feature': X.columns,
+        'Importance': feature_ranker.feature_importances_
+    })
+    
+    # Select the top N features
+    top_features = (
+        importances_df
+        .sort_values(by='Importance', ascending=False)
+        .head(top_n)
+    )
+    
+    return top_features['Feature'].tolist()
 
 def annualize_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
     """Calculates the annualized Sharpe ratio for a series of daily returns."""

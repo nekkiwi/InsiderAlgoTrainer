@@ -14,7 +14,7 @@ def main():
     #####################
     
     timepoint   = "1w"
-    threshold   = 0
+    threshold   = 5
     category    = "alpha"
     top_n       = 10 
     model       = "LightGBM"
