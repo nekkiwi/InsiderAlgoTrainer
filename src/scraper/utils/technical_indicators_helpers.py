@@ -1,4 +1,4 @@
-import talib
+import ta
 import pandas as pd
 import yfinance as yf
 import contextlib
@@ -53,78 +53,85 @@ def normalize_indicators(indicators, stock_data):
 
 def calculate_technical_indicators(row, stock_data):
     """
-    Calculate a suite of technical indicators for a given stock data
-    and assign the most recent values to the row.
+    Calculate technical indicators using the `ta` Python library.
+    Assigns the most recent values to the row.
     """
-    # Convert relevant columns to 1-D numpy arrays of type double
-    close  = stock_data['Close'].to_numpy(dtype='float64').flatten()
-    high   = stock_data['High'].to_numpy(dtype='float64').flatten()
-    low    = stock_data['Low'].to_numpy(dtype='float64').flatten()
-    volume = stock_data['Volume'].to_numpy(dtype='float64').flatten()
-    open_  = stock_data['Open'].to_numpy(dtype='float64').flatten()
+
+    # 1) Drop NA rows early
+    stock_data = stock_data.dropna()
+    if len(stock_data) < 50:
+        return row  # not enough data
+
+    # 2) Utility to coerce any column into a 1-D Series
+    def ensure_1d_series(col):
+        # col may be a DataFrame (n×1) or Series (n,)
+        if isinstance(col, pd.DataFrame):
+            # take first column
+            s = col.iloc[:, 0]
+        else:
+            s = col
+        # flatten any extra dims
+        values = s.values
+        if values.ndim > 1:
+            values = values.flatten()
+        return pd.Series(values, index=stock_data.index)
+
+    # 3) Extract each column as a proper Series
+    close  = ensure_1d_series(stock_data['Close'])
+    high   = ensure_1d_series(stock_data['High'])
+    low    = ensure_1d_series(stock_data['Low'])
+    volume = ensure_1d_series(stock_data['Volume'])
+    open_  = ensure_1d_series(stock_data['Open'])
 
     indicators = {}
 
-    # Moving Averages
-    sma10 = talib.SMA(close, timeperiod=10)
-    sma50 = talib.SMA(close, timeperiod=50)
-    ema10 = talib.EMA(close, timeperiod=10)
-    ema50 = talib.EMA(close, timeperiod=50)
-    indicators['SMA_10'] = sma10[-1]    if sma10.size    else None
-    indicators['SMA_50'] = sma50[-1]    if sma50.size    else None
-    indicators['EMA_10'] = ema10[-1]    if ema10.size    else None
-    indicators['EMA_50'] = ema50[-1]    if ema50.size    else None
+    # --- Moving Averages ---
+    indicators['SMA_10'] = close.rolling(10).mean().iloc[-1]
+    indicators['SMA_50'] = close.rolling(50).mean().iloc[-1]
+    indicators['EMA_10'] = close.ewm(span=10).mean().iloc[-1]
+    indicators['EMA_50'] = close.ewm(span=50).mean().iloc[-1]
 
-    # Momentum Indicators
-    rsi14      = talib.RSI(close, timeperiod=14)
-    macd, macd_signal, macd_hist = talib.MACD(close)
-    adx14      = talib.ADX(high, low, close, timeperiod=14)
-    cci14      = talib.CCI(high, low, close, timeperiod=14)
-    roc        = talib.ROC(close, timeperiod=10)
-    mfi14      = talib.MFI(high, low, close, volume, timeperiod=14)
-    willr14    = talib.WILLR(high, low, close, timeperiod=14)
-    stoch_k, stoch_d = talib.STOCH(high, low, close)
-    indicators['RSI_14']      = rsi14[-1]      if rsi14.size      else None
-    indicators['MACD']        = macd[-1]       if macd.size       else None
-    indicators['MACD_Signal'] = macd_signal[-1]if macd_signal.size else None
-    indicators['MACD_Hist']   = macd_hist[-1]  if macd_hist.size  else None
-    indicators['ADX_14']      = adx14[-1]      if adx14.size      else None
-    indicators['CCI_14']      = cci14[-1]      if cci14.size      else None
-    indicators['ROC']         = roc[-1]        if roc.size        else None
-    indicators['MFI_14']      = mfi14[-1]      if mfi14.size      else None
-    indicators['WILLR_14']    = willr14[-1]    if willr14.size    else None
-    indicators['STOCH_K']     = stoch_k[-1]    if stoch_k.size    else None
-    indicators['STOCH_D']     = stoch_d[-1]    if stoch_d.size    else None
+    # --- Momentum Indicators ---
+    rsi = ta.momentum.RSIIndicator(close=close, window=14)
+    indicators['RSI_14'] = rsi.rsi().iloc[-1]
 
-    # Volatility Indicators
-    atr14 = talib.ATR(high, low, close, timeperiod=14)
-    upper, _, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2)
-    indicators['ATR_14']          = atr14[-1] if atr14.size else None
-    indicators['Bollinger_Upper'] = upper[-1] if upper.size else None
-    indicators['Bollinger_Lower'] = lower[-1] if lower.size else None
+    macd = ta.trend.MACD(close=close)
+    indicators['MACD']        = macd.macd().iloc[-1]
+    indicators['MACD_Signal'] = macd.macd_signal().iloc[-1]
+    indicators['MACD_Hist']   = macd.macd_diff().iloc[-1]
 
-    # Volume Indicators
-    obv = talib.OBV(close, volume)
-    indicators['OBV'] = obv[-1] if obv.size else None
+    adx = ta.trend.ADXIndicator(high=high, low=low, close=close, window=14)
+    indicators['ADX_14'] = adx.adx().iloc[-1]
 
-    # Pattern Recognition
-    doji      = talib.CDLDOJI(open_, high, low, close)
-    hammer    = talib.CDLHAMMER(open_, high, low, close)
-    engulfing = talib.CDLENGULFING(open_, high, low, close)
-    indicators['CDL_DOJI']      = int(doji[-1]      / 100) if doji.size      else None
-    indicators['CDL_HAMMER']    = int(hammer[-1]    / 100) if hammer.size    else None
-    indicators['CDL_ENGULFING'] = int(engulfing[-1] / 100) if engulfing.size else None
+    cci = ta.trend.CCIIndicator(high=high, low=low, close=close, window=14)
+    indicators['CCI_14'] = cci.cci().iloc[-1]
 
-    # Aroon
-    aroon_up, aroon_down = talib.AROON(high, low, timeperiod=14)
-    indicators['AROON_Up']   = aroon_up[-1]   if aroon_up.size   else None
-    indicators['AROON_Down'] = aroon_down[-1] if aroon_down.size else None
+    roc = ta.momentum.ROCIndicator(close=close, window=10)
+    indicators['ROC'] = roc.roc().iloc[-1]
 
-    # Parabolic SAR
-    sar = talib.SAR(high, low, acceleration=0.02, maximum=0.2)
-    indicators['SAR'] = sar[-1] if sar.size else None
+    mfi = ta.volume.MFIIndicator(high=high, low=low, close=close, volume=volume, window=14)
+    indicators['MFI_14'] = mfi.money_flow_index().iloc[-1]
 
-    # Assign all indicators back to the row
+    willr = ta.momentum.WilliamsRIndicator(high=high, low=low, close=close, lbp=14)
+    indicators['WILLR_14'] = willr.williams_r().iloc[-1]
+
+    stoch = ta.momentum.StochasticOscillator(high=high, low=low, close=close)
+    indicators['STOCH_K'] = stoch.stoch().iloc[-1]
+    indicators['STOCH_D'] = stoch.stoch_signal().iloc[-1]
+
+    # --- Volatility Indicators ---
+    atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14)
+    indicators['ATR_14'] = atr.average_true_range().iloc[-1]
+
+    bb = ta.volatility.BollingerBands(close=close, window=20, window_dev=2)
+    indicators['Bollinger_Upper'] = bb.bollinger_hband().iloc[-1]
+    indicators['Bollinger_Lower'] = bb.bollinger_lband().iloc[-1]
+
+    # --- Volume Indicators ---
+    obv = ta.volume.OnBalanceVolumeIndicator(close=close, volume=volume)
+    indicators['OBV'] = obv.on_balance_volume().iloc[-1]
+
+    # 4) Write back into the row dict
     for key, val in indicators.items():
         row[key] = val
 

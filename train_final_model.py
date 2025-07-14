@@ -13,11 +13,11 @@ def main():
     # Feature Selection #
     #####################
     
-    timepoint   = "6m"
-    threshold   = 8
+    timepoint   = "1w"
+    threshold   = 0
     category    = "alpha"
     top_n       = 10 
-    model       = "RandomForest"
+    model       = "LightGBM"
     seeds       = [42, 123, 2024, 99, 7]  # A list of 5 different seeds
     
     ############

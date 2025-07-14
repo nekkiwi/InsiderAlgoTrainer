@@ -181,7 +181,7 @@ class ModelTrainer:
                 X_val[continuous_features] = scaler.transform(X_val[continuous_features])
                 X_ts[continuous_features] = scaler.transform(X_ts[continuous_features])
                 
-                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n)
+                selected_features = select_features_for_fold(X_tr, y_bin_tr, top_n, seed)
                 if not selected_features: continue
                 X_tr_sel, X_val_sel, X_ts_sel = X_tr[selected_features], X_val[selected_features], X_ts[selected_features]
                 

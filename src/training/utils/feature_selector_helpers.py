@@ -8,39 +8,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 
-def select_features_for_fold(X_train: pd.DataFrame, y_binary_train: pd.Series, top_n: int) -> list:
+def select_features_for_fold(X: pd.DataFrame, y: pd.Series, top_n: int, seed: int) -> list:
     """
-    Selects top features using a RandomForestClassifier on a given training set.
-    This is designed to be run INSIDE a cross-validation or walk-forward fold.
-
-    Args:
-        X_train (pd.DataFrame): Feature data for the training fold.
-        y_binary_train (pd.Series): Binary target data for the training fold.
-        top_n (int): The number of top features to select.
-
-    Returns:
-        list: A list of the names of the top_n selected features.
+    Selects the top N features based on feature importance from a RandomForest model.
+    
+    --- FIX: The function now accepts a 'seed' and uses it to initialize the
+    internal model, ensuring the feature selection varies across runs. ---
     """
-    # Ensure there's enough data to train
-    if y_binary_train.nunique() < 2 or y_binary_train.value_counts().min() < 5:
-        print("[WARN] Not enough data in a minority class for feature selection in this fold. Skipping.")
+    if X.empty:
         return []
 
-    # Using a simple, fast model for selection
-    model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, n_jobs=-1)
-    model.fit(X_train, y_binary_train)
-
-    importances = pd.Series(model.feature_importances_, index=X_train.columns)
+    # Initialize a model with the provided seed to rank features
+    feature_ranker = RandomForestClassifier(
+        n_estimators=100, 
+        random_state=seed,  # Use the passed-in seed
+        n_jobs=-1
+    )
     
-    # Filter for features that have some importance
-    non_zero_importances = importances[importances > 0]
-    if non_zero_importances.empty:
-        return []
-
-    # Select the top N features
-    top_features = non_zero_importances.nlargest(top_n)
+    feature_ranker.fit(X, y)
     
-    return top_features.index.tolist()
+    importances_df = pd.DataFrame({
+        'Feature': X.columns,
+        'Importance': feature_ranker.feature_importances_
+    })
+    
+    # Select the top N features based on importance
+    top_features = importances_df.sort_values(by='Importance', ascending=False).head(top_n)
+    
+    return top_features['Feature'].tolist()
 
 def get_sorted_strategy_keys(strategy_keys: list) -> list:
     """

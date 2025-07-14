@@ -33,22 +33,29 @@ class ModelInference:
     def _load_final_models(self) -> dict:
         """Loads all final deployment models for the chosen strategy across all seeds."""
         models = {}
-        strategy_dir_name = f"{self.model_type}_{self.category}_{self.timepoint}_{self.threshold_pct}pct_top{self.top_n}"
+        
+        # --- FIX 1: Corrected the directory name to match the training output ---
+        # The "_top{self.top_n}" part was removed as it's not part of the directory name.
+        strategy_dir_name = f"{self.model_type}_{self.category}_{self.timepoint}_{self.threshold_pct}pct"
         model_dir = os.path.join(self.final_models_dir, strategy_dir_name)
 
         if not os.path.isdir(model_dir):
             raise FileNotFoundError(f"Final model directory not found: {model_dir}")
 
-        clf_files = glob.glob(os.path.join(model_dir, "final_clf_seed*.joblib"))
-        reg_files = glob.glob(os.path.join(model_dir, "final_reg_seed*.joblib"))
-        
+        # --- FIX 2: Corrected paths to look inside 'classifier_weights' and 'regressor_weights' subfolders ---
+        clf_dir = os.path.join(model_dir, "classifier_weights")
+        reg_dir = os.path.join(model_dir, "regressor_weights")
+
+        clf_files = glob.glob(os.path.join(clf_dir, "final_clf_seed*.joblib"))
+        reg_files = glob.glob(os.path.join(reg_dir, "final_reg_seed*.joblib"))
+
         if not clf_files:
-            raise FileNotFoundError(f"No final classifier models found in {model_dir}")
-            
+            raise FileNotFoundError(f"No final classifier models found in {clf_dir}")
+
         for f in clf_files:
             seed = int(re.search(r'seed(\d+)', f).group(1))
             models[seed] = {'clf': joblib.load(f)}
-
+        
         for f in reg_files:
             seed = int(re.search(r'seed(\d+)', f).group(1))
             if seed in models:

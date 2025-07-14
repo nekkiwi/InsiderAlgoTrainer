@@ -1,6 +1,7 @@
 import os
 import time
 from tqdm import tqdm
+from datetime import timedelta
 from multiprocessing import Pool, cpu_count
 import numpy as np
 
@@ -137,30 +138,6 @@ class FeatureScraper:
         
         self.data = clean_data(self.data, drop_threshold)
         print(f"[INFO] Financial ratio processing complete. DataFrame now has {len(self.data.columns)} columns.")
-
-
-
-    def add_insider_transactions(self, drop_threshold=0.05):
-        rows = self.data.to_dict('records')
-        
-        tasks = [
-            (row['Ticker'], row['Filing Date']) 
-            for row in rows
-        ]
-        
-        with Pool(2) as pool: # Using a reduced number of workers
-            # We call pool.imap with our new helper function, get_recent_trades_star.
-            # tqdm can now correctly iterate as each task is completed.
-            processed_rows = list(tqdm(pool.imap(get_recent_trades_star, tasks, chunksize=1), total=len(tasks), desc="- Scraping recent insider trades"))
-                
-        for row, trade_data in zip(rows, processed_rows):
-            if trade_data:
-                row.update(trade_data)
-        
-        self.data = pd.DataFrame(rows)
-        
-        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
-        self.data = clean_data(self.data, drop_threshold)
     
         
     def save_feature_distribution(self, output_file='feature_distribution.xlsx'):
@@ -231,10 +208,7 @@ class FeatureScraper:
         
         self.add_financial_ratios(drop_threshold=0.5)
         if train: self.save_to_excel(f'interim/train/3_features_TI_FR.xlsx')
-        
-        # self.load_sheet(f'interim/train/3_features_TI_FR.xlsx')
-        
-        # self.add_insider_transactions(drop_threshold=0.05)
+    
         if train: 
             # self.save_to_excel(f'interim/train/4_features_TI_FR_IT.xlsx')
             self.save_feature_distribution('analysis/feature_distribution.xlsx')
