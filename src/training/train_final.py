@@ -69,8 +69,14 @@ class FinalModelTrainer:
             clf = RandomForestClassifier(n_estimators=200, max_depth=12, min_samples_leaf=5, class_weight='balanced', random_state=seed, n_jobs=-1)
             reg_model = RandomForestRegressor(n_estimators=200, max_depth=8, min_samples_leaf=15, random_state=seed, n_jobs=-1)
         elif model_type == 'LightGBM':
-            clf = LGBMClassifier(random_state=seed, n_jobs=-1, verbosity=-1)
-            reg_model = LGBMRegressor(random_state=seed, n_jobs=-1, verbosity=-1)
+            clf = LGBMClassifier(n_estimators=100,
+                                learning_rate=0.1,
+                                num_leaves=31,
+                                random_state=seed, n_jobs=-1, verbosity=-1)
+            reg_model = LGBMRegressor(n_estimators=100,
+                                    learning_rate=0.1,
+                                    num_leaves=31,
+                                    random_state=seed, n_jobs=-1, verbosity=-1)
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
 
