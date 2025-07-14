@@ -1,28 +1,67 @@
-# OpenInsider Project
+# Insider Algo Trainer
 
-## Overview
+This repository collects insider trading information from [OpenInsider](http://openinsider.com) and historical market data to build machine-learning models that predict future stock performance. It provides utilities for scraping, feature engineering, target generation, walk‑forward validation, and final model training.
 
-This project is designed to scrape and analyze insider trading data, integrate stock information, and calculate financial ratios and technical indicators. It also includes functionalities for data preprocessing and potentially applying machine learning models for predictive analysis.
+## Features
+
+- Scrape periodic insider transactions and aggregate them by ticker.
+- Enrich datasets with technical indicators and financial ratios.
+- Download historical prices and compute return/alpha targets for multiple horizons.
+- Perform walk‑forward validation using Random Forest or LightGBM models.
+- Train final deployment models and save scalers, feature lists, and weights.
+
+## Installation
+
+Requires **Python 3.8+**. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+1. **Build the dataset**
+
+   ```bash
+   python scrape_data.py
+   ```
+
+   Intermediate and final data are written to `data/`.
+
+2. **Run walk‑forward training**
+
+   ```bash
+   python train_walk_forward.py
+   ```
+
+   Configure time horizons, thresholds, and model type in the script or via arguments.
+
+3. **Train final models**
+
+   ```bash
+   python train_final_model.py
+   ```
+
+   Saved models appear under `data/models/final_deployment/`.
 
 ## Project Structure
 
-- `src/`: Contains the main codebase.
-  - `scraper/`: 
-    - `feature_scraper.py`: Main script for scraping and processing insider trading data.
-  - `utils/`: Utility functions and helpers.
-    - `feature_scraper_helpers.py`: Functions to clean and process scraped data.
-    - `technical_indicators_helpers.py`: Functions to calculate and normalize technical indicators.
-    - `financial_ratios_helpers.py`: Functions to fetch financial data and calculate financial ratios.
-  - `analysis/`: (Future development) Modules for feature analysis.
-  - `models/`: (Future development) Modules for model training and evaluation.
-- `tests/`: Unit tests for the project.
-- `docs/`: Project documentation.
+```
+├── data/                 # Raw data, targets, and trained model artifacts
+├── src/
+│   ├── scraper/          # Data scraping and feature engineering
+│   └── training/         # Walk‑forward and final model training
+├── scrape_data.py        # Orchestrate data collection and target generation
+├── train_walk_forward.py # Perform walk‑forward validation
+├── train_final_model.py  # Train final models on full dataset
+└── requirements.txt      # Python dependencies
+```
 
-## Setup
+## Contributing
 
-### 1. Clone the Repository
+Pull requests and issues are welcome. Please add tests for new features and follow PEP8 style guidelines.
 
-Clone this repository to your local machine using:
+## License
 
-```bash
-git clone https://github.com/nekkiwi/InsiderAlgo.git
+Provided for research and educational purposes. No warranty is offered; use at your own risk.
+
