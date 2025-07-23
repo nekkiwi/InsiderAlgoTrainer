@@ -91,6 +91,11 @@ class ModelTrainer:
         """
         best_classifier_params = 'default'
         best_regressor_params = 'default'
+        
+        lgbm_stochastic_params = {
+                'subsample': 0.8,
+                'colsample_bytree': 0.8
+            }
 
         # --- Stage 1: Train or Tune the Classifier ---
         if use_hyperparameter_tuning:
@@ -111,7 +116,7 @@ class ModelTrainer:
                 classifier = LGBMClassifier(n_estimators=100,
                                             learning_rate=0.1, 
                                             num_leaves=31,
-                                            random_state=seed, n_jobs=-1, verbosity=-1)
+                                            random_state=seed, n_jobs=-1, verbosity=-1, **lgbm_stochastic_params)
             classifier.fit(X_tr, y_bin_tr)
 
         # --- Stage 2: Train or Tune the Regressor ---
@@ -139,7 +144,7 @@ class ModelTrainer:
                     regressor = LGBMRegressor(n_estimators=100,
                                               learning_rate=0.1,
                                               num_leaves=31,
-                                              random_state=seed, n_jobs=-1, verbosity=-1)
+                                              random_state=seed, n_jobs=-1, verbosity=-1, **lgbm_stochastic_params)
                 regressor.fit(X_reg_train, y_reg_train)
 
         return classifier, regressor, best_classifier_params, best_regressor_params
