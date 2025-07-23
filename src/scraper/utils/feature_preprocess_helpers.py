@@ -285,6 +285,30 @@ def engineer_new_features(df: pd.DataFrame) -> pd.DataFrame:
     # Captures "buying the dip" vs. "buying at new highs".
     df['Distance_from_52W_High'] = 1 - df['52_Week_High_Normalized']
     
-    print(f"- Successfully added {len(['CEO_Buy_Value', 'CFO_Buy_Value', 'Pres_Buy_Value', 'Insider_Importance_Score', 'Purchase_Sale_Ratio_Quarter', 'Value_to_MarketCap', 'Distance_from_52W_High'])} new features.")
+    # Ensure 'Filing Date' is a datetime object for date operations
+    df['Filing Date'] = pd.to_datetime(df['Filing Date'], dayfirst=True)
+    
+    # 1. Day of Year
+    df['Day_Of_Year'] = df['Filing Date'].dt.dayofyear
+
+    # 2. Days of Quarter
+    quarter_start_months = [1, 4, 7, 10]
+    
+    def days_since_quarter_start(date):
+        # Determine the start month of the quarter for the given date
+        start_month = max(m for m in quarter_start_months if m <= date.month)
+        # Create the timestamp for the first day of that quarter
+        quarter_start_date = pd.Timestamp(year=date.year, month=start_month, day=1)
+        # Calculate the number of days passed
+        return (date - quarter_start_date).days + 1
+
+    df['Days_Of_Quarter'] = df['Filing Date'].apply(days_since_quarter_start)
+    
+    new_features_list = [
+        'CEO_Buy_Value', 'CFO_Buy_Value', 'Pres_Buy_Value', 
+        'Insider_Importance_Score', 'Value_to_MarketCap', 
+        'Distance_from_52W_High', 'Day_Of_Year', 'Days_Of_Quarter'
+    ]
+    print(f"- Successfully added {len(new_features_list)} new features.")
     
     return df

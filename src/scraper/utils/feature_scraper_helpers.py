@@ -79,7 +79,7 @@ def process_dates(df):
     df['Trade Date'] = pd.to_datetime(df['Trade Date'])
     
     # Calculate "Days Since Trade"
-    df['Days Since Trade'] = (df['Filing Date'] - df['Trade Date']).dt.days
+    df['Days_Since_Trade'] = (df['Filing Date'] - df['Trade Date']).dt.days
     return df
 
 def clean_numeric_columns(df):
