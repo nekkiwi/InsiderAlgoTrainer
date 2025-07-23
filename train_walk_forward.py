@@ -16,7 +16,7 @@ def main():
     timepoints = ["1w"]                    # ["1w", "1m", "3m", "6m", "8m"]
     thresholds = [5]                       # [0, 2, 5, 10, 15] # used for binary signals
     category   = "alpha"                   # alpha or return
-    top_n      = 12                        # top 20 relevant features chosen, 10 was worse
+    top_n      = 10                        # top 20 relevant features chosen, 10 was worse
     model      = "LightGBM"                # "RandomForest" or "LightGBM"
     seeds      = [42, 123, 2024, 99, 7]    # A list of 5 different seeds
     

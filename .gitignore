@@ -15,6 +15,7 @@ env.bak/
 venv.bak/
 .venv/
 .env/
+data*/
 
 # Data science
 *.ipynb_checkpoints

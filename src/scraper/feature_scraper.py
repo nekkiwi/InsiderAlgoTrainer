@@ -195,16 +195,16 @@ class FeatureScraper:
         start_time = time.time()
         print("\n### START ### Feature Scraper")
         self.train = train
-        # self.fetch_data_from_pages(num_weeks)
-        # if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
+        self.fetch_data_from_pages(num_weeks)
+        if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
         
-        # self.clean_table(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
+        self.clean_table(drop_threshold=0.05)
+        if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
         
-        # self.add_technical_indicators(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
+        self.add_technical_indicators(drop_threshold=0.05)
+        if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
         
-        self.load_sheet(f'interim/train/2_features_TI.xlsx')
+        # self.load_sheet(f'interim/train/2_features_TI.xlsx')
         
         self.add_financial_ratios(drop_threshold=0.5)
         if train: self.save_to_excel(f'interim/train/3_features_TI_FR.xlsx')
