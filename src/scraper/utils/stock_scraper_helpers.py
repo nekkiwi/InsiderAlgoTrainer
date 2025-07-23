@@ -80,7 +80,7 @@ def save_formatted_sheets(all_targets_df: pd.DataFrame, max_days: int, output_fi
     for i in range(1, max_days + 1):
         c = f'return_day_{i}'; return_cols.append(c); return_rename[c] = f'Day {i} Stock'
     returns_df = all_targets_df[return_cols].rename(columns=return_rename)
-    with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
         returns_df.to_excel(writer, sheet_name='Returns', index=False)
         alpha_df.to_excel(writer, sheet_name='Alpha', index=False)
     print(f"- Formatted stock data successfully saved to {output_file}")
