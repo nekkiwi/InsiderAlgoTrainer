@@ -116,5 +116,6 @@ def aggregate_group(df):
         Dir=('Dir', 'max'),
         Pres=('Pres', 'max'),
         VP=('VP', 'max'),
-        TenPercent=('10%', 'max')).sort_values(by='Filing Date', ascending=False).reset_index()
+        TenPercent=('10%', 'max'),
+        Days_Since_Trade=('Days_Since_Trade', 'mean')).sort_values(by='Filing Date', ascending=False).reset_index()
     return df
