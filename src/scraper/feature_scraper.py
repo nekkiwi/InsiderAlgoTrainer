@@ -1,19 +1,18 @@
 import os
 import time
 from tqdm import tqdm
-from datetime import timedelta
 from multiprocessing import Pool, cpu_count
 import numpy as np
 
-from .utils.feature_scraper_helpers import *
 from .utils.technical_indicators_helpers import *
 from .utils.financial_ratios_helpers import *
+from .utils.feature_scraper_helpers import *
+
 
 class FeatureScraper:
     def __init__(self):
         self.base_url = "http://openinsider.com/screener?"
         self.data = pd.DataFrame()
-        self.train = False
         
     def process_web_page(self, date_range):
         start_date, end_date = date_range
@@ -21,9 +20,7 @@ class FeatureScraper:
         return fetch_and_parse(url)
 
     def fetch_data_from_pages(self, num_weeks):
-        start_days_ago = 0
-        if self.train:
-            start_days_ago = 30
+        start_days_ago = 30
         end_date = datetime.datetime.now() - datetime.timedelta(days=start_days_ago)  # Start 1 month ago
         date_ranges = []
 
@@ -34,7 +31,7 @@ class FeatureScraper:
             end_date = start_date  # Move back another week
 
         # Use multiprocessing to fetch and parse data in parallel
-        with Pool(cpu_count()) as pool:
+        with Pool(cpu_count()//2) as pool:
             data_frames = list(tqdm(pool.imap(self.process_web_page, date_ranges), total=len(date_ranges), desc="- Scraping entries from openinsider.com for each week"))
 
         # Filter out None values (pages where no valid table was found)
@@ -46,17 +43,14 @@ class FeatureScraper:
         else:
             print("- No data could be extracted.")
     
-    def clean_table(self, drop_threshold=0.05):
+    def clean_table(self):
         columns_of_interest = ["Filing Date", "Trade Date", "Ticker", "Title", "Price", "Qty", "Owned", "ΔOwn", "Value"]
         self.data = self.data[columns_of_interest]
         # This function correctly converts the column to datetime objects initially
         self.data = process_dates(self.data)
         
         # Filter out entries where Filing Date is less than 20 business days in the past
-        if self.train:
-            cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
-        else:
-            cutoff_date = pd.to_datetime('today')
+        cutoff_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(25)
         self.data = self.data[self.data['Filing Date'] < cutoff_date]
         
         # Clean numeric columns
@@ -80,65 +74,6 @@ class FeatureScraper:
         # Ensure 'Filing Date' remains a datetime object and is not converted to a string.
         # We remove any string formatting like .dt.strftime().
         self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'])
-        
-        # Clean the data by dropping columns and rows with missing values
-        self.data = clean_data(self.data, drop_threshold)
-
-
-        
-    def add_technical_indicators(self, drop_threshold=0.05):
-        rows = self.data.to_dict('records')
-        
-        # Apply technical indicators
-        with Pool(cpu_count()) as pool:
-            processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows), desc="- Scraping technical indicators"))
-        
-        self.data = pd.DataFrame(filter(None, processed_rows))
-        
-        # Replace infinite values and drop rows with missing values
-        self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
-        
-        # Clean the data by dropping columns with more than 5% missing values and then dropping rows with missing values
-        self.data = clean_data(self.data, drop_threshold)
-
-
-    def add_financial_ratios(self, drop_threshold=0.2):
-        """
-        Fetches financial ratios and merges them using a robust strategy
-        to ensure the merge keys align correctly.
-        """
-        if self.data.empty:
-            print("- Data is empty, skipping financial ratio processing.")
-            return
-
-        print(f"[INFO] Fetching financial ratios for {len(self.data)} entries...")
-        ratios_df = batch_fetch_financial_data(self.data[['Ticker', 'Filing Date']])
-
-        if ratios_df.empty:
-            print("- Could not fetch any financial ratios. Continuing without new data.")
-            return
-
-        # --- Robust Merge Preparation ---
-        # 1. Ensure the merge key ('Filing Date') is a consistent datetime type in both DataFrames.
-        #    This is the most critical step to prevent key misalignment and merge failures.
-        self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'])
-        ratios_df['Filing Date'] = pd.to_datetime(ratios_df['Filing Date'])
-
-        # --- End of Preparation ---
-
-        # 2. Perform the merge. It will now align correctly because the keys are of the same type.
-        print(f"[INFO] Merging {len(ratios_df)} new financial ratios into the dataset.")
-        self.data = pd.merge(self.data, ratios_df, on=['Ticker', 'Filing Date'], how='left')
-        
-        # 3. Process and clean the newly merged data.
-        if 'Sector' in self.data.columns:
-            sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
-            self.data = pd.concat([self.data, sector_dummies], axis=1)
-            self.data.drop(columns=['Sector'], inplace=True)
-        
-        self.data = clean_data(self.data, drop_threshold)
-        print(f"[INFO] Financial ratio processing complete. DataFrame now has {len(self.data.columns)} columns.")
-    
         
     def save_feature_distribution(self, output_file='feature_distribution.xlsx'):
         # Define the quantiles and statistics to be calculated
@@ -191,32 +126,84 @@ class FeatureScraper:
         else:
             print(f"- File '{file_path}' does not exist.")
         
-    def run(self, num_weeks, train):
+    def add_technical_indicators(self):
+        rows = self.data.to_dict('records')
+        
+        # Apply technical indicators
+        with Pool(cpu_count()//2) as pool:
+            processed_rows = list(tqdm(pool.imap(process_ticker_technical_indicators, rows), total=len(rows), desc="- Scraping technical indicators"))
+        
+        self.data = pd.DataFrame(filter(None, processed_rows))
+        
+        # Replace infinite values and drop rows with missing values
+        self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    def add_financial_ratios(self):
+        """
+        Fetches financial ratios and merges them using a robust strategy
+        to ensure the merge keys align correctly.
+        """
+        if self.data.empty:
+            print("- Data is empty, skipping financial ratio processing.")
+            return
+
+        print(f"[INFO] Fetching financial ratios for {len(self.data)} entries...")
+        ratios_df = batch_fetch_financial_data(self.data[['Ticker', 'Filing Date']])
+
+        if ratios_df.empty:
+            print("- Could not fetch any financial ratios. Continuing without new data.")
+            return
+
+        # --- Robust Merge Preparation ---
+        # 1. Ensure the merge key ('Filing Date') is a consistent datetime type in both DataFrames.
+        #    This is the most critical step to prevent key misalignment and merge failures.
+        self.data['Filing Date'] = pd.to_datetime(self.data['Filing Date'])
+        ratios_df['Filing Date'] = pd.to_datetime(ratios_df['Filing Date'])
+
+        # --- End of Preparation ---
+
+        # 2. Perform the merge. It will now align correctly because the keys are of the same type.
+        print(f"[INFO] Merging {len(ratios_df)} new financial ratios into the dataset.")
+        self.data = pd.merge(self.data, ratios_df, on=['Ticker', 'Filing Date'], how='left')
+        
+        # 3. Process and clean the newly merged data.
+        if 'Sector' in self.data.columns:
+            sector_dummies = pd.get_dummies(self.data['Sector'], prefix='Sector', dtype=int)
+            self.data = pd.concat([self.data, sector_dummies], axis=1)
+            self.data.drop(columns=['Sector'], inplace=True)
+        
+        print(f"[INFO] Financial ratio processing complete. DataFrame now has {len(self.data.columns)} columns.")
+
+    def run(self, num_weeks):
+        """The main execution pipeline with maximum verbosity."""
         start_time = time.time()
         print("\n### START ### Feature Scraper")
-        self.train = train
-        # self.fetch_data_from_pages(num_weeks)
-        # if train: self.save_to_excel(f'interim/train/0_features_raw.xlsx')
         
-        # self.clean_table(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/1_features_formatted.xlsx')
+        # Step 1: Raw data fetch
+        self.fetch_data_from_pages(num_weeks)
+        print_df_state(self.data, "Raw Data from OpenInsider")
+        self.save_to_excel(f'interim/0_features_raw.xlsx')
+        if self.data.empty:
+            print("No raw data fetched. Aborting.")
+            return
         
-        # self.add_technical_indicators(drop_threshold=0.05)
-        # if train: self.save_to_excel(f'interim/train/2_features_TI.xlsx')
+        # Step 2: Clean insider data
+        self.clean_table()
+        print_df_state(self.data, "Data After Initial Cleaning (clean_table)")
+        self.save_to_excel(f'interim/1_features_formatted.xlsx')
+        if self.data.empty:
+            print("Data became empty after cleaning. Aborting.")
+            return
+
+        # Step 3: Unified feature generation
+        self.add_technical_indicators()
+        print_df_state(self.data, "Data After Technical Indicators Added")
+        self.add_financial_ratios()
+        print_df_state(self.data, "Data After Financial Ratios Added")
+        self.save_to_excel(f'interim/2_features_complete.xlsx')
         
-        self.load_sheet(f'interim/train/2_features_TI.xlsx')
-        
-        self.add_financial_ratios(drop_threshold=0.5)
-        if train: self.save_to_excel(f'interim/train/3_features_TI_FR.xlsx')
-    
-        if train: 
-            # self.save_to_excel(f'interim/train/4_features_TI_FR_IT.xlsx')
-            self.save_feature_distribution('analysis/feature_distribution.xlsx')
-        elapsed_time = timedelta(seconds=int(time.time() - start_time))
-        print(f"### END ### Feature Scraper - time elapsed: {elapsed_time}")
+        # Step 4: Final analysis
+        self.save_feature_distribution()
+        end_time = time.time()
+        print(f"### FINISHED ### Total runtime: {end_time - start_time:.2f} seconds.")
         return self.data
-        
-if __name__ == "__main__":
-    feature_scraper = FeatureScraper()
-    feature_scraper.run(num_weeks=12*4)
-    

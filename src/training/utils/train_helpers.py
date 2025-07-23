@@ -10,6 +10,83 @@ import seaborn as sns
 from scipy.stats import mannwhitneyu
 from sklearn.metrics import matthews_corrcoef
 from lightgbm import LGBMClassifier
+from tqdm import tqdm
+
+def apply_tp_sl(
+    events_df, 
+    tp_sl=(0.10, 0.05),
+    high_sheet=None, 
+    low_sheet=None, 
+    timepoint_bdays=5,
+    verbose=False
+):
+    """
+    Args:
+        events_df: DataFrame (trades to test), expects Ticker, Filing Date
+        tp_sl: tuple (tp, sl)
+        high_sheet: DataFrame, must match on Ticker and Filing Date, columns Day_0, Day_1, ...
+        low_sheet: likewise
+        timepoint_bdays: The number of days in the window (e.g., 5 for 5d)
+        verbose: If True, prints detailed step-by-step information for each trade.
+    Returns:
+        pd.Series: realized returns per trade (TP/SL logic applied)
+    """
+    tp, sl = tp_sl
+    realized_returns = []
+
+    # Wrap the iterator with tqdm for a progress bar
+    iterator = tqdm(events_df.iterrows(), total=len(events_df), desc="    Applying TP/SL", leave=False)
+    
+    for idx, row in iterator:
+        ticker = row["Ticker"]
+        filing_date = row["Filing Date"].strftime('%Y-%m-%d') # Format date for printing
+        
+        if verbose: print(f"\n--- Processing: {ticker} on {filing_date} ---")
+
+        # Find the corresponding high and low price movements for the event
+        match_high = high_sheet[(high_sheet["Ticker"] == ticker) & (high_sheet["Filing Date"] == row["Filing Date"])]
+        match_low = low_sheet[(low_sheet["Ticker"] == ticker) & (low_sheet["Filing Date"] == row["Filing Date"])]
+        
+        exit_return = None
+        
+        # If no price data is found for this event, it will be handled as a fallback
+        if match_high.empty or match_low.empty:
+            if verbose: print("  - No price data found in high/low sheets.")
+        else:
+            # Check each day within the window for a TP or SL trigger
+            for d in range(timepoint_bdays):
+                col = f"Day_{d}"
+                high_val = match_high[col].iloc[0] if col in match_high.columns else np.nan
+                low_val = match_low[col].iloc[0] if col in match_low.columns else np.nan
+
+                if verbose:
+                    high_str = f"{high_val:.2%}" if pd.notna(high_val) else "N/A"
+                    low_str = f"{low_val:.2%}" if pd.notna(low_val) else "N/A"
+                    print(f"  - Day {d}: High={high_str}, Low={low_str}")
+
+                # Check for TP hit
+                if pd.notna(high_val) and high_val >= tp:
+                    exit_return = tp
+                    if verbose: print(f"  >>> TAKE-PROFIT hit on Day {d} at {tp:.2%}")
+                    break
+                # Check for SL hit
+                if pd.notna(low_val) and low_val <= -sl:
+                    exit_return = -sl
+                    if verbose: print(f"  >>> STOP-LOSS hit on Day {d} at {-sl:.2%}")
+                    break
+        
+        # If no TP or SL was triggered after checking all days
+        if exit_return is None:
+            fallback_col_name = f'return_{timepoint_bdays}d'
+            fallback_value = row.get(fallback_col_name, np.nan)
+            exit_return = fallback_value
+            if verbose:
+                fallback_str = f"{fallback_value:.2%}" if pd.notna(fallback_value) else "NaN"
+                print(f"  >>> No TP/SL hit. Using FALLBACK return: {fallback_str}")
+                
+        realized_returns.append(exit_return)
+
+    return pd.Series(realized_returns, index=events_df.index)
 
 def select_features_for_fold(X: pd.DataFrame, y: pd.Series, top_n: int, seed: int) -> list:
     """
@@ -48,14 +125,50 @@ def select_features_for_fold(X: pd.DataFrame, y: pd.Series, top_n: int, seed: in
     
     return top_features['Feature'].tolist()
 
-def annualize_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
-    """Calculates the annualized Sharpe ratio for a series of daily returns."""
-    if returns.std() == 0 or len(returns) < 2:
+def annualize_sharpe_ratio(
+    returns: pd.Series, 
+    risk_free_rate: float = 0.0, 
+    periods_per_year: int = 252
+) -> float:
+    """
+    Calculates the annualized Sharpe ratio with robust safety checks.
+
+    This function prevents numerical instability that leads to infinitely large
+    or "crazy" numbers by checking for a near-zero standard deviation.
+
+    Args:
+        returns (pd.Series): A series of returns (e.g., daily, weekly).
+        risk_free_rate (float): The annualized risk-free rate.
+        periods_per_year (int): The number of trading periods in a year
+                                (e.g., 252 for daily, 52 for weekly).
+
+    Returns:
+        float: The annualized Sharpe ratio, or np.nan if the calculation
+               is statistically unstable (e.g., fewer than 2 returns or
+               zero volatility).
+    """
+    # --- Safety Check 1: Insufficient Data ---
+    # A Sharpe ratio requires at least 2 data points to calculate std dev.
+    if returns.empty or len(returns) < 2:
         return np.nan
+
+    # --- Safety Check 2: Near-Zero Volatility (The Core Fix) ---
+    # Check if the standard deviation is negligibly small to prevent division by zero
+    # or massive numbers from floating point inaccuracies.
+    std_dev = returns.std()
+    if std_dev < 1e-9:  # A small epsilon to check for effective zero
+        return np.nan
+
+    # If checks pass, proceed with the calculation
+    # Adjust the risk-free rate to match the period of the returns
+    periodic_risk_free_rate = risk_free_rate / periods_per_year
+    excess_returns = returns - periodic_risk_free_rate
     
-    excess_returns = returns - risk_free_rate / 252
-    sharpe = np.mean(excess_returns) / np.std(excess_returns)
-    return sharpe * np.sqrt(252)
+    # Calculate the periodic Sharpe ratio
+    sharpe = np.mean(excess_returns) / std_dev
+    
+    # Annualize the result
+    return sharpe * np.sqrt(periods_per_year)
 
 def adjusted_sharpe_ratio(sharpe: float, num_signals: int, target_signals: int = 100) -> float:
     """Adjusts the Sharpe Ratio based on the number of signals."""
@@ -108,37 +221,62 @@ def load_selected_features(sel_file, category, strategy_name, top_n):
         return top['Feature'].head(top_n).tolist()
     except (FileNotFoundError, ValueError): return []
 
-def evaluate_test_fold(classifier, regressor, optimal_threshold, X_ts, y_bin_ts, y_cont_ts) -> dict:
-    """Evaluates a single test fold and returns a dictionary of metrics, including the composite score."""
-    if X_ts.empty or optimal_threshold is np.nan: return None
-
-    buy_signals = classifier.predict(X_ts)
-    if buy_signals.sum() == 0: return None
+def evaluate_test_fold(
+    classifier, regressor, optimal_threshold, X_ts_sel, y_bin_ts, y_cont_ts, category,
+    high_sheet=None, low_sheet=None, # Changed from stock_data_final_file
+    window_days=20, tp_sl=(0.10, 0.05), X_meta_ts=None
+) -> dict:
+    """
+    Evaluates a single test fold, with and without take-profit/stop-loss.
+    If stock_data_final_file is provided, will also calculate TP/SL-constrained results.
+    """
+    # Use only the selected features for prediction
+    print(f"    [EVAL] Starting evaluation on {len(X_ts_sel)} test samples.")
+    if X_ts_sel.empty or optimal_threshold is np.nan:
+        print("    [EVAL] Skipping: Test set is empty or optimal threshold is NaN.")
+        return None
     
-    pos_class_idx = X_ts.index[buy_signals == 1]
-    neg_class_idx = X_ts.index[buy_signals == 0]
+    buy_signals = classifier.predict(X_ts_sel)
+    num_buy_signals = buy_signals.sum()
+    print(f"    [EVAL] Classifier generated {num_buy_signals} buy signals (out of {len(X_ts_sel)}).")
+    if num_buy_signals == 0:
+        print("    [EVAL] Skipping: No buy signals generated.")
+        return None
+
+    pos_class_idx = X_ts_sel.index[buy_signals == 1]
+    neg_class_idx = X_ts_sel.index[buy_signals == 0]
     returns_pos_classifier = y_cont_ts.loc[pos_class_idx]
     returns_neg_classifier = y_cont_ts.loc[neg_class_idx]
 
     _, p_val_classifier = mannwhitneyu(returns_pos_classifier, returns_neg_classifier, alternative='greater')
-    
     sharpe_classifier = annualize_sharpe_ratio(returns_pos_classifier)
     adj_sharpe_classifier = adjusted_sharpe_ratio(sharpe_classifier, len(returns_pos_classifier))
-    
-    if regressor is None or returns_pos_classifier.empty: return None
-    
-    predicted_returns = pd.Series(regressor.predict(X_ts.loc[pos_class_idx]), index=pos_class_idx)
+
+    print(f"    [EVAL] Classifier-only -> Mean Return: {returns_pos_classifier.mean():.4f}, Adj Sharpe: {adj_sharpe_classifier:.3f}")
+    if regressor is None or returns_pos_classifier.empty:
+        print("    [EVAL] Skipping regressor stage: No regressor model or no positive signals.")
+        return None
+
+    print(f"    [EVAL] Scoring {len(pos_class_idx)} positive signals with regressor.")
+    predicted_returns = pd.Series(regressor.predict(X_ts_sel.loc[pos_class_idx]), index=pos_class_idx)
     final_selection_idx = predicted_returns[predicted_returns >= optimal_threshold].index
+    print(f"    [EVAL] Applying threshold >= {optimal_threshold:.4f}: {len(final_selection_idx)} signals remain.")
     final_returns = y_cont_ts.loc[final_selection_idx]
-    
+    if final_returns.empty:
+        print("    [EVAL] No signals passed the regressor threshold. Final strategy has 0 trades.")
+
     _, p_val_final = (np.nan, np.nan)
     if not final_returns.empty and not returns_neg_classifier.empty:
         _, p_val_final = mannwhitneyu(final_returns, returns_neg_classifier, alternative='greater')
-    
+
+    metrics = {}
+
     sharpe_final = annualize_sharpe_ratio(final_returns)
     adj_sharpe_final = adjusted_sharpe_ratio(sharpe_final, len(final_returns))
-
-    metrics = {
+    
+    print(f"    [EVAL] Final Strategy (no TP/SL) -> Mean Return: {final_returns.mean():.4f}, Adj Sharpe: {adj_sharpe_final:.3f}")
+    
+    metrics.update({
         'Adjusted Sharpe (Final)': adj_sharpe_final,
         'Adjusted Sharpe (Classifier)': adj_sharpe_classifier,
         'Sharpe Ratio (Final)': sharpe_final,
@@ -153,9 +291,70 @@ def evaluate_test_fold(classifier, regressor, optimal_threshold, X_ts, y_bin_ts,
         'Mean Return (Final Strategy)': final_returns.mean(),
         'Mean Return (Classifier)': returns_pos_classifier.mean(),
         'MCC (Classifier)': matthews_corrcoef(y_bin_ts, buy_signals)
-    }
-    return metrics
+    })
 
+    # ---- START of TP/SL calculation ----
+    if high_sheet is not None and low_sheet is not None and len(final_selection_idx) > 0:
+        print(f"    [EVAL] Applying TP/SL ({tp_sl[0]}/{tp_sl[1]}) to {len(final_selection_idx)} final signals...")
+        if X_meta_ts is None:
+            print("    [ERROR] X_meta_ts is required for TP/SL evaluation but was not provided.")
+            return metrics
+
+        # Create the events_df from the metadata corresponding to the final signal indices
+        events_df = X_meta_ts.loc[final_selection_idx].copy()
+        
+        # Add fallback close-close returns if present (e.g. 'return_20d')
+        fallback_col = f'return_{window_days}d'
+        if fallback_col in y_cont_ts:
+            events_df[fallback_col] = y_cont_ts.loc[final_selection_idx].values
+
+        tp_sl_returns = apply_tp_sl(
+            events_df,
+            tp_sl=tp_sl,
+            high_sheet=high_sheet,
+            low_sheet=low_sheet,
+            timepoint_bdays=window_days
+        )
+        
+        p_val_tp_sl = np.nan
+        clean_tp_sl_returns = tp_sl_returns.dropna()
+        print(f"    [EVAL] Calculated {len(clean_tp_sl_returns)} returns after applying TP/SL.")
+        
+        # Only perform the test if both series have data
+        if not clean_tp_sl_returns.empty and not returns_neg_classifier.empty:
+            _, p_val_tp_sl = mannwhitneyu(clean_tp_sl_returns, returns_neg_classifier, alternative='greater')
+        
+        sharpe_tp_sl = annualize_sharpe_ratio(tp_sl_returns)
+        adj_sharpe_tp_sl = adjusted_sharpe_ratio(sharpe_tp_sl, len(tp_sl_returns.dropna()))
+        
+        print(f"    [EVAL] TP/SL Strategy -> Mean Return: {tp_sl_returns.mean():.4f}, Adj Sharpe: {adj_sharpe_tp_sl:.3f}")
+        
+        metrics.update({
+            'Sharpe Ratio (TP/SL)': sharpe_tp_sl,
+            'Median Return (TP/SL)': tp_sl_returns.median(),
+            'Mean Return (TP/SL)': tp_sl_returns.mean(),
+            'Adjusted Sharpe (TP/SL)': adj_sharpe_tp_sl,
+            'P-Value (TP/SL vs Neg)': p_val_tp_sl # <-- Added here
+        })
+
+    return metrics
+    
+def convert_timepoints_to_bdays(timepoints: list) -> dict:
+    """
+    Converts a list of timepoint strings (e.g., '5d', '2w') into a dictionary
+    mapping each timepoint to its equivalent in business days.
+    """
+    converted = {}
+    for tp in timepoints:
+        match = re.match(r"(\d+)([dwmy])", tp.lower())
+        if not match: raise ValueError(f"Invalid timepoint format: '{tp}'")
+        num, unit = int(match.group(1)), match.group(2)
+        if unit == 'd': converted[tp] = num
+        elif unit == 'w': converted[tp] = num * 5
+        elif unit == 'm': converted[tp] = num * 21 # More precise average
+        elif unit == 'y': converted[tp] = num * 252 # More precise average
+        else: raise ValueError(f"Unknown time unit: '{unit}'")
+    return converted
     
 def save_strategy_results(results_df, stats_dir, model_name, category):
     """
@@ -172,37 +371,48 @@ def save_strategy_results(results_df, stats_dir, model_name, category):
 
     # --- UPDATED: Group by the separate classifier and regressor parameters ---
     group_cols = [
-        'Timepoint', 'Threshold', 'Fold', 'Model'
+        'Timepoint', 'Threshold', 'Fold', 'Model', 'TP', 'SL'
     ]
     
+    # --- UPDATED: Add TP/SL metrics to the display list ---
     display_cols = [
         'Adjusted Sharpe (Final)',
-        'Adjusted Sharpe (Classifier)',
-        'Sharpe Ratio (Final)',
-        'Sharpe Ratio (Classifier)',
+        'Adjusted Sharpe (TP/SL)', # New
         'P-Value (Final vs Neg)',
+        'P-Value (TP/SL vs Neg)',
+        'Sharpe Ratio (Final)',
+        'Sharpe Ratio (TP/SL)',
+        'Adjusted Sharpe (Classifier)',
+        'Sharpe Ratio (Classifier)',
         'P-Value (Classifier vs Neg)',
         'Num Signals (Final)',
         'Num Signals (Classifier)',
         'Optimal Threshold',
         'Median Return (Final Strategy)',
+        'Median Return (TP/SL)', # New
         'Median Return (Classifier)',
         'Mean Return (Final Strategy)',
+        'Mean Return (TP/SL)', # New
         'Mean Return (Classifier)',
         'MCC (Classifier)'
     ]
     
-    valid_display_cols = [col for col in display_cols if col in results_df.columns]
+    valid_group_cols = [col for col in group_cols if col in results_df.columns]
+    valid_display_cols = [col for col in display_cols if col in results_df.columns]    
+    
+    if not valid_group_cols:
+        print("[ERROR] No valid grouping columns found in results. Cannot create summary.")
+        return
     
     # Calculate mean and std grouped by the detailed model configuration
-    mean_df = results_df.groupby(group_cols)[valid_display_cols].mean().reset_index()
-    std_df = results_df.groupby(group_cols)[valid_display_cols].std().reset_index()
+    mean_df = results_df.groupby(valid_group_cols, dropna=False)[valid_display_cols].mean().reset_index()
+    std_df = results_df.groupby(valid_group_cols, dropna=False)[valid_display_cols].std().reset_index()
 
-    mean_df.columns = [col if col in group_cols else f"{col} (Mean)" for col in mean_df.columns]
-    std_df.columns = [col if col in group_cols else f"{col} (Std)" for col in std_df.columns]
+    mean_df.columns = [col if col in valid_group_cols else f"{col} (Mean)" for col in mean_df.columns]
+    std_df.columns = [col if col in valid_group_cols else f"{col} (Std)" for col in std_df.columns]
 
-    summary_df = pd.merge(mean_df, std_df, on=group_cols, how='left')
-    summary_df.sort_values(by=['Timepoint', 'Threshold', 'Fold'], inplace=True)
+    summary_df = pd.merge(mean_df, std_df, on=valid_group_cols, how='left')
+    summary_df.sort_values(by=valid_group_cols, inplace=True)
 
     try:
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:

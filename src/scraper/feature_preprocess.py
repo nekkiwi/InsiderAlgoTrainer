@@ -27,9 +27,9 @@ class FeaturePreprocessor:
         else:
             print("- Warning: 'Ticker' or 'Filing Date' not found for dropping.")
 
-    def save_feature_data(self, file_path, train):
+    def save_feature_data(self, file_path):
         # This method remains the same
-        features_cleaned = save_feature_data(self.data, self.ticker_filing_dates, file_path, train)
+        features_cleaned = save_feature_data(self.data, self.ticker_filing_dates, file_path)
         return features_cleaned
 
     def identify_feature_types(self):
@@ -60,34 +60,43 @@ class FeaturePreprocessor:
             self.data, self.corr_matrix, threshold
         )
 
-    def run(self, features_df, train):
+    def run(self, features_df):
+        """
+        The main, streamlined preprocessing pipeline.
+        This method now takes the DataFrame directly from the FeatureScraper.
+        """
         start_time = time.time()
         print("\n### START ### Feature Preprocessing")
 
-        if features_df is None and train:
-            self.data = load_feature_data(f'interim/train/3_features_TI_FR.xlsx')
+        if features_df is None or features_df.empty:
+            self.data = load_feature_data(f'interim/2_features_complete.xlsx')
         else:
-            self.data = features_df
-            
+            self.data = features_df.copy()
+
+        # 1. Engineer new features from the rich dataset provided by the scraper.
+        # This function is in your feature_preprocess_helpers.py file.
         self.data = engineer_new_features(self.data)
+
+        # 2. Prepare data for modeling by separating identifiers from features.
         self.prepare_data()
+
+        # 3. Identify feature types to guide subsequent steps.
         self.identify_feature_types()
+        
+        # 4. If in training mode, perform feature selection.
+        self.filter_low_variance_features()
 
-        # The 'run' method is now simplified for both train and inference,
-        # as normalization is no longer handled here.
-        if train:
-            self.filter_low_variance_features()
-            plot_output_dir = os.path.join(os.path.dirname(__file__), '../../data', 'analysis/feature_preprocess')
-            os.makedirs(plot_output_dir, exist_ok=True)
-            self.calculate_and_plot_correlations(plot_output_dir)
-            self.drop_highly_correlated_features(threshold=0.9)
-            features_cleaned = self.save_feature_data('interim/train/5_features_full_cleaned.xlsx', train)
-        else:
-            # For inference, we simply use the data as is, since normalization
-            # will be handled by the loaded training pipeline.
-            features_cleaned = self.save_feature_data('', train)
-
+        # Define the output directory for analysis plots
+        plot_output_dir = os.path.join(os.path.dirname(__file__), '../../data', 'analysis/feature_preprocess')
+        os.makedirs(plot_output_dir, exist_ok=True)
+        
+        self.calculate_and_plot_correlations(plot_output_dir)
+        self.drop_highly_correlated_features(threshold=0.9)
+        
+        # Save the final, cleaned training data
+        features_cleaned = self.save_feature_data('interim/3_features_preprocessed.xlsx')
+        
         elapsed_time = timedelta(seconds=int(time.time() - start_time))
         print(f"### END ### Feature Preprocess - time elapsed: {elapsed_time}")
-
+        
         return features_cleaned

@@ -22,16 +22,16 @@ def main():
     
     num_weeks = 5 * 12 * 4
     
-    features_df = feature_scraper.run(num_weeks, train=True)
-    features_df_preprocessed = feature_preprocessor.run(features_df, train=True)
+    features_df = feature_scraper.run(num_weeks)
+    features_df_preprocessed = feature_preprocessor.run(features_df)
     
     #################
     # Stock Scraper #
     #################
     
-    timepoints = ['1w', '1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m']
+    timepoints = ['1w', '1m', '2m', '3m', '4m', '5m', '6m']
     
-    stock_scraper.run(timepoints, features_df_preprocessed)
+    stock_scraper.run(features_df_preprocessed, timepoints)
     stock_analyzer.run()
     
 if __name__ == "__main__":

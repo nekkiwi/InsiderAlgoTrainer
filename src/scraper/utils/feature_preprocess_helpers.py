@@ -30,7 +30,7 @@ def get_ticker_filing_dates(data):
     ticker_filing_dates['Filing Date'] = ticker_filing_dates['Filing Date'].dt.strftime('%d/%m/%Y %H:%M')
     return ticker_filing_dates
 
-def save_feature_data(data, ticker_filing_dates, file_path, train):
+def save_feature_data(data, ticker_filing_dates, file_path):
     """Save the processed feature data."""
     data_dir = os.path.join(os.path.dirname(__file__), '../../../data')
     ticker_filing_dates['Filing Date'] = pd.to_datetime(ticker_filing_dates['Filing Date'], dayfirst=True, errors='coerce')
@@ -38,14 +38,13 @@ def save_feature_data(data, ticker_filing_dates, file_path, train):
     ticker_filing_dates['Filing Date'] = ticker_filing_dates['Filing Date'].dt.strftime('%d/%m/%Y %H:%M')
     final_data = pd.concat([ticker_filing_dates, data], axis=1)
 
-    if train:
-        file_path = os.path.join(data_dir, file_path)
-        if not final_data.empty:
-            try:
-                final_data.to_excel(file_path, index=False)
-                print(f"- Data successfully saved to {file_path}.")
-            except Exception as e:
-                print(f"- Failed to save data to Excel: {e}")
+    file_path = os.path.join(data_dir, file_path)
+    if not final_data.empty:
+        try:
+            final_data.to_excel(file_path, index=False)
+            print(f"- Data successfully saved to {file_path}.")
+        except Exception as e:
+            print(f"- Failed to save data to Excel: {e}")
         else:
             print("- No data to save.")
     return final_data
@@ -159,13 +158,43 @@ def drop_highly_correlated_features(data, corr_matrix, threshold=0.9):
 # Correlation calculation
 
 def calculate_cramers_v(data, categorical_features):
-    """Calculate Cramér's V for all pairs of categorical features."""
+    """
+    Calculate Cramér's V for all pairs of categorical features, robustly handling
+    NaNs and self-correlation.
+    """
     n = len(categorical_features.columns)
-    cramers_matrix = pd.DataFrame(np.zeros((n, n)), index=categorical_features.columns, columns=categorical_features.columns)
-    for col1 in categorical_features.columns:
-        for col2 in categorical_features.columns:
-            confusion_matrix = pd.crosstab(data[col1], data[col2])
-            cramers_matrix.at[col1, col2] = cramers_v(confusion_matrix)
+    cramers_matrix = pd.DataFrame(np.eye(n), index=categorical_features.columns, columns=categorical_features.columns)
+
+    # Iterate through the upper triangle of the matrix to avoid duplicate calculations
+    for i in range(n):
+        for j in range(i + 1, n):
+            col1 = categorical_features.columns[i]
+            col2 = categorical_features.columns[j]
+            
+            # Create a temporary DataFrame and drop NaNs for the specific pair
+            temp_df = data[[col1, col2]].dropna()
+            
+            if not temp_df.empty:
+                series1 = temp_df[col1]
+                series2 = temp_df[col2]
+                
+                if not series1.empty and not series2.empty:
+                    confusion_matrix = pd.crosstab(series1, series2)
+                    
+                    if confusion_matrix.size > 1 and confusion_matrix.sum().sum() > 0:
+                        v = cramers_v(confusion_matrix)
+                        cramers_matrix.at[col1, col2] = v
+                        cramers_matrix.at[col2, col1] = v # Assign to the symmetric position
+                    else:
+                        cramers_matrix.at[col1, col2] = np.nan
+                        cramers_matrix.at[col2, col1] = np.nan
+                else:
+                    cramers_matrix.at[col1, col2] = np.nan
+                    cramers_matrix.at[col2, col1] = np.nan
+            else:
+                cramers_matrix.at[col1, col2] = np.nan
+                cramers_matrix.at[col2, col1] = np.nan
+                
     return cramers_matrix
 
 def cramers_v(confusion_matrix):
@@ -180,21 +209,44 @@ def point_biserial_correlation(data, continuous_col, binary_col):
     return pointbiserialr(data[binary_col], data[continuous_col])[0]
 
 def hybrid_correlation_matrix(data, continuous_features, categorical_features):
-    """Calculate a hybrid correlation matrix for continuous and categorical features."""
+    """
+    Calculate a hybrid correlation matrix, robustly handling missing values
+    on a pairwise basis for each calculation.
+    """
     columns = continuous_features.columns.tolist() + categorical_features.columns.tolist()
     hybrid_corr = pd.DataFrame(np.nan, index=columns, columns=columns)
 
+    # 1. Continuous-Continuous (Pearson): .corr() already handles pairwise NaNs by default.
     pearson_corr = continuous_features.corr(method='pearson').abs()
     hybrid_corr.loc[continuous_features.columns, continuous_features.columns] = pearson_corr
 
+    # 2. Categorical-Categorical (Cramér's V):
+    #    pd.crosstab also handles pairwise NaNs by default, but we make it explicit.
     cramers_v_matrix = calculate_cramers_v(data, categorical_features)
     hybrid_corr.loc[categorical_features.columns, categorical_features.columns] = cramers_v_matrix
 
+    # 3. Continuous-Categorical (Point-Biserial): This requires careful handling.
     for cont_col in continuous_features.columns:
         for cat_col in categorical_features.columns:
-            if data[cat_col].nunique() == 2:
-                hybrid_corr.at[cont_col, cat_col] = point_biserial_correlation(data, cont_col, cat_col)
-                hybrid_corr.at[cat_col, cont_col] = hybrid_corr.at[cont_col, cat_col]
+            # --- ROBUSTNESS FIX ---
+            # Create a temporary df with just the two columns and drop rows where either is missing.
+            temp_df = data[[cont_col, cat_col]].dropna()
+
+            # Ensure there's enough data and the categorical column is binary for the test.
+            if len(temp_df) > 1 and temp_df[cat_col].nunique() == 2:
+                # Calculate correlation on the cleaned, pairwise data.
+                try:
+                    corr, _ = pointbiserialr(temp_df[cat_col], temp_df[cont_col])
+                    hybrid_corr.at[cont_col, cat_col] = abs(corr) # Use absolute value for consistency
+                    hybrid_corr.at[cat_col, cont_col] = abs(corr)
+                except ValueError:
+                    # This can happen if one of the series has zero variance after dropping NaNs.
+                    hybrid_corr.at[cont_col, cat_col] = np.nan
+                    hybrid_corr.at[cat_col, cont_col] = np.nan
+            else:
+                # Not enough data or not a binary column, so correlation is undefined.
+                hybrid_corr.at[cont_col, cat_col] = np.nan
+                hybrid_corr.at[cat_col, cont_col] = np.nan
 
     return hybrid_corr
 
@@ -285,6 +337,30 @@ def engineer_new_features(df: pd.DataFrame) -> pd.DataFrame:
     # Captures "buying the dip" vs. "buying at new highs".
     df['Distance_from_52W_High'] = 1 - df['52_Week_High_Normalized']
     
-    print(f"- Successfully added {len(['CEO_Buy_Value', 'CFO_Buy_Value', 'Pres_Buy_Value', 'Insider_Importance_Score', 'Purchase_Sale_Ratio_Quarter', 'Value_to_MarketCap', 'Distance_from_52W_High'])} new features.")
+    # Ensure 'Filing Date' is a datetime object for date operations
+    df['Filing Date'] = pd.to_datetime(df['Filing Date'], dayfirst=True)
+    
+    # 1. Day of Year
+    df['Day_Of_Year'] = df['Filing Date'].dt.dayofyear
+
+    # 2. Days of Quarter
+    quarter_start_months = [1, 4, 7, 10]
+    
+    def days_since_quarter_start(date):
+        # Determine the start month of the quarter for the given date
+        start_month = max(m for m in quarter_start_months if m <= date.month)
+        # Create the timestamp for the first day of that quarter
+        quarter_start_date = pd.Timestamp(year=date.year, month=start_month, day=1)
+        # Calculate the number of days passed
+        return (date - quarter_start_date).days + 1
+
+    df['Days_Of_Quarter'] = df['Filing Date'].apply(days_since_quarter_start)
+    
+    new_features_list = [
+        'CEO_Buy_Value', 'CFO_Buy_Value', 'Pres_Buy_Value', 
+        'Insider_Importance_Score', 'Value_to_MarketCap', 
+        'Distance_from_52W_High', 'Day_Of_Year', 'Days_Of_Quarter'
+    ]
+    print(f"- Successfully added {len(new_features_list)} new features.")
     
     return df

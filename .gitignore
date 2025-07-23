@@ -22,6 +22,7 @@ venv.bak/
 # VS Code
 .vscode/
 
-data/
+data*
+ticker*
 
 src/alpaca/api_keys.json

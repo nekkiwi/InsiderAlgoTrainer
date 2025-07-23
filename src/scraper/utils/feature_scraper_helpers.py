@@ -4,33 +4,29 @@ import requests
 from bs4 import BeautifulSoup
 from io import StringIO
 
-def clean_data(df, threshold=0.05):
+def clean_data(df, threshold=0.05, protected_substrings=None):
     """
-    Clean the DataFrame by first dropping columns with more than the specified percentage
-    of missing values, then dropping rows with any missing values.
-    
-    Args:
-        df (pd.DataFrame): The DataFrame to clean.
-        threshold (float): The percentage of missing values allowed in a column before it is dropped.
-                           Default is 5% (i.e., 0.05).
-    
-    Returns:
-        pd.DataFrame: The cleaned DataFrame.
+    Clean the DataFrame by dropping columns with too many missing values,
+    except those whose names contain any of the substrings in `protected_substrings`.
+    Then, drop rows with any remaining missing values.
     """
-    # Step 1: Drop columns where more than `threshold` % of the entries are missing
+    if protected_substrings is None:
+        protected_substrings = []
+
+    # Identify columns to drop, but protect requested columns
     missing_percentage = df.isnull().mean()
-    columns_to_drop = missing_percentage[missing_percentage > threshold].index
+    columns_to_drop = [
+        col for col in missing_percentage[missing_percentage > threshold].index
+        if not any(sub in col for sub in protected_substrings)
+    ]
     df_cleaned = df.drop(columns=columns_to_drop)
 
-    if not columns_to_drop.empty:
-        print(f"- Dropped columns: {list(columns_to_drop)}, missing in more than {int(threshold*100)}% of entries")
-
-    # Step 2: Drop any remaining rows with missing values
+    if columns_to_drop:
+        print(f"- Dropped columns: {columns_to_drop}, missing in more than {int(threshold*100)}% of entries")
     df_cleaned.dropna(inplace=True)
-
     print(f"- Remaining rows after dropping missing values: {len(df_cleaned)}")
-    
     return df_cleaned
+
 
 def get_next_market_open(dt):
     # Assume market hours are 9:00 AM to 5:00 PM
@@ -74,12 +70,26 @@ def fetch_and_parse(url):
     return parse_table(html)
 
 def process_dates(df):
-    # Convert date strings to datetime objects
-    df['Filing Date'] = pd.to_datetime(df['Filing Date']).apply(get_next_market_open)
-    df['Trade Date'] = pd.to_datetime(df['Trade Date'])
+    """
+    Robustly converts date strings to datetime objects and calculates the
+    number of days between the trade and filing.
+    """
+    # Use errors='coerce' to turn any unparseable dates into NaT (Not a Time)
+    df['Filing Date'] = pd.to_datetime(df['Filing Date'], errors='coerce')
+    df['Trade Date'] = pd.to_datetime(df['Trade Date'], errors='coerce')
+
+    # Drop rows where date conversion failed, as they are unusable
+    df.dropna(subset=['Filing Date', 'Trade Date'], inplace=True)
+
+    # Now that all dates are valid, apply the market open logic
+    df['Filing Date'] = df['Filing Date'].apply(get_next_market_open)
     
     # Calculate "Days Since Trade"
-    df['Days Since Trade'] = (df['Filing Date'] - df['Trade Date']).dt.days
+    df['Days_Since_Trade'] = (df['Filing Date'] - df['Trade Date']).dt.days
+    
+    # You can still print for debugging if you want
+    # print(df['Days_Since_Trade'])
+    
     return df
 
 def clean_numeric_columns(df):
@@ -116,5 +126,21 @@ def aggregate_group(df):
         Dir=('Dir', 'max'),
         Pres=('Pres', 'max'),
         VP=('VP', 'max'),
-        TenPercent=('10%', 'max')).sort_values(by='Filing Date', ascending=False).reset_index()
+        TenPercent=('10%', 'max'),
+        Days_Since_Trade=('Days_Since_Trade', 'mean')).sort_values(by='Filing Date', ascending=False).reset_index()
     return df
+
+
+def print_df_state(df, stage_name):
+    """A helper function to print the state of a DataFrame for debugging."""
+    print(f"\n--- CHECKPOINT: {stage_name} ---")
+    if df is None or df.empty:
+        print("DataFrame is empty or None.")
+        print("--------------------------------------\n")
+        return
+    
+    print(f"Shape: {df.shape}")
+    print("Columns:", df.columns.tolist())
+    # print("Head (first 3 rows):")
+    # print(df.head(3).to_string()) # .to_string() helps with wide dataframes
+    print("--------------------------------------\n")

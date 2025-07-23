@@ -14,8 +14,8 @@ def main():
     #####################
     
     timepoint   = "1w"
-    threshold   = 5
-    category    = "alpha"
+    threshold   = 0
+    category    = "return"
     top_n       = 10 
     model       = "LightGBM"
     seeds       = [42, 123, 2024, 99, 7]  # A list of 5 different seeds

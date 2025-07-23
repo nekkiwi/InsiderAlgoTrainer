@@ -11,7 +11,7 @@ def load_stock_data(stock_returns_file, sheet_name='Returns'):
     # Add a check to ensure the file exists
     if not os.path.exists(stock_returns_file):
         raise FileNotFoundError(f"Data file not found at: {stock_returns_file}")
-    return pd.read_excel(stock_returns_file, sheet_name=sheet_name, index_col=0)
+    return pd.read_excel(stock_returns_file, sheet_name=sheet_name)
 
 # --- REFACTORED AND FIXED ---
 def filter_and_align_data(primary_df, other_dfs, max_jump: float = 0.1):
